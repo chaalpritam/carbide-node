@@ -78,16 +78,16 @@ impl CarbideClient {
             .get(&url)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Health check failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Health check failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Health check returned status: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Health check returned status: {}", response.status())));
         }
 
         let network_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse health response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse health response: {}", e)))?;
 
         match network_message.message_type {
             MessageType::HealthCheckResponse(health) => {
@@ -112,16 +112,16 @@ impl CarbideClient {
             .get(&url)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Status request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Status request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Status request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Status request returned: {}", response.status())));
         }
 
         response
-            .json()
+            .json::<serde_json::Value>()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse status response: {}", e)))
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse status response: {}", e)))
     }
 
     // ============================================================================
@@ -149,16 +149,16 @@ impl CarbideClient {
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Quote request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Quote request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Quote request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Quote request returned: {}", response.status())));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse quote response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse quote response: {}", e)))?;
 
         match response_message.message_type {
             MessageType::StorageQuoteResponse(quote) => {
@@ -169,7 +169,7 @@ impl CarbideClient {
                 Ok(quote)
             }
             MessageType::Error(error) => {
-                Err(CarbideError::Network(format!("Provider error: {}", error.message)))
+                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
             }
             _ => Err(CarbideError::Internal("Unexpected response type for quote request".to_string())),
         }
@@ -196,16 +196,16 @@ impl CarbideClient {
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Store request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Store request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Store request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Store request returned: {}", response.status())));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse store response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse store response: {}", e)))?;
 
         match response_message.message_type {
             MessageType::StoreFileResponse(store_response) => {
@@ -219,7 +219,7 @@ impl CarbideClient {
                 Ok(store_response)
             }
             MessageType::Error(error) => {
-                Err(CarbideError::Network(format!("Provider error: {}", error.message)))
+                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
             }
             _ => Err(CarbideError::Internal("Unexpected response type for store request".to_string())),
         }
@@ -250,16 +250,16 @@ impl CarbideClient {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("File upload failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("File upload failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Upload returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Upload returned: {}", response.status())));
         }
 
         let result: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse upload response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse upload response: {}", e)))?;
 
         if self.config.enable_logging {
             info!("File {} uploaded successfully", file_id);
@@ -286,16 +286,16 @@ impl CarbideClient {
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Retrieve request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Retrieve request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Retrieve request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Retrieve request returned: {}", response.status())));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse retrieve response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse retrieve response: {}", e)))?;
 
         match response_message.message_type {
             MessageType::RetrieveFileResponse(retrieve_response) => {
@@ -305,7 +305,7 @@ impl CarbideClient {
                 Ok(retrieve_response)
             }
             MessageType::Error(error) => {
-                Err(CarbideError::Network(format!("Provider error: {}", error.message)))
+                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
             }
             _ => Err(CarbideError::Internal("Unexpected response type for retrieve request".to_string())),
         }
@@ -321,16 +321,16 @@ impl CarbideClient {
             .get(download_url)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Download failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Download failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Download returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Download returned: {}", response.status())));
         }
 
         let data = response
             .bytes()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to read download data: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to read download data: {}", e)))?;
 
         if self.config.enable_logging {
             info!("Downloaded {} bytes", data.len());
@@ -364,16 +364,16 @@ impl CarbideClient {
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Network(format!("Challenge request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Challenge request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Network(format!("Challenge returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!("Challenge returned: {}", response.status())));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Network(format!("Failed to parse challenge response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse challenge response: {}", e)))?;
 
         match response_message.message_type {
             MessageType::StorageProof(proof) => {
@@ -383,7 +383,7 @@ impl CarbideClient {
                 Ok(proof)
             }
             MessageType::Error(error) => {
-                Err(CarbideError::Network(format!("Challenge error: {}", error.message)))
+                Err(CarbideError::Provider(format!("Challenge error: {}", error.message)))
             }
             _ => Err(CarbideError::Internal("Unexpected response type for challenge".to_string())),
         }
