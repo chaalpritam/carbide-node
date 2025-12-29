@@ -564,6 +564,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "carbide-core",
+ "chrono",
  "hex",
  "ring 0.17.14",
  "serde",

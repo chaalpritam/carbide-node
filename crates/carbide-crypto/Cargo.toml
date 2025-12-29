@@ -14,10 +14,16 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+# Time handling
+chrono = { workspace = true }
+
 # Cryptography
 blake3 = { workspace = true }
 ring = { workspace = true }
 aes-gcm = { workspace = true }
+
+# Hex encoding
+hex = "0.4"
 
 # Utilities
 tracing = { workspace = true }
