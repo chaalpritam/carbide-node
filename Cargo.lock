@@ -578,11 +578,14 @@ dependencies = [
 name = "carbide-discovery"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "carbide-core",
  "chrono",
  "clap",
  "dashmap",
+ "reqwest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "tokio",

@@ -130,7 +130,7 @@ impl File {
 pub type ProviderId = Uuid;
 
 /// Different tiers of storage providers with varying guarantees
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProviderTier {
     /// Home users with spare storage ($0.002/GB, 95% uptime)
     Home,
@@ -165,7 +165,7 @@ impl ProviderTier {
 }
 
 /// Geographic region for provider location
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Region {
     /// North America (US, Canada, Mexico)
     NorthAmerica,
