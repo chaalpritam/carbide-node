@@ -1,8 +1,10 @@
-# Carbide Node Architecture
+# Carbide Node Architecture (Legacy - Centralized Approach)
+
+> **Note**: This document describes the original centralized architecture. For the current **decentralized marketplace** design, see [DECENTRALIZED_ARCHITECTURE.md](./DECENTRALIZED_ARCHITECTURE.md).
 
 ## Overview
 
-Carbide Node is a high-performance, Rust-based backend service designed to serve as the central data storage and synchronization hub for the Carbide ecosystem. It connects desktop (`CarbideDrive`) and mobile (`Carbide`) clients, providing efficient large data storage, retrieval, and real-time synchronization capabilities.
+This document outlines the original centralized approach where Carbide Node was designed as a high-performance, Rust-based backend service serving as the central data storage and synchronization hub. The project has since evolved into a **decentralized marketplace** architecture.
 
 ## Design Philosophy
 

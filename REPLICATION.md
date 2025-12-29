@@ -1,78 +1,100 @@
-# Carbide Node Replication & Multi-Node Architecture
+# Carbide Network Replication & Multi-Provider Architecture
 
-## Storage Model Comparison
+> **Note**: This document has been updated to reflect the **decentralized marketplace** architecture. For the original centralized approach, see the legacy sections.
 
-### BitTorrent vs Carbide Node
+## Storage Model Evolution
 
-| Aspect | BitTorrent | Carbide Node |
-|--------|------------|--------------|
-| **Architecture** | Decentralized P2P | Centralized with replication |
-| **Data Distribution** | Pieces across many peers | Complete files on your nodes |
-| **Availability** | Depends on peer presence | Always available (your infrastructure) |
-| **Access Control** | Public swarms | Private, authenticated access |
-| **Data Integrity** | Peer-dependent | Guaranteed by your nodes |
-| **Performance** | Variable (peer-dependent) | Consistent (your hardware) |
+### BitTorrent vs Original Carbide vs Carbide Network (Current)
 
-### What Carbide Node Learns from BitTorrent
+| Aspect | BitTorrent | Original Carbide | Carbide Network (Current) |
+|--------|------------|------------------|---------------------------|
+| **Architecture** | Decentralized P2P | Centralized with replication | **Decentralized Marketplace** |
+| **Data Distribution** | Pieces across many peers | Complete files on your nodes | **Complete files across chosen providers** |
+| **Availability** | Depends on peer presence | Always available (your infrastructure) | **High availability (multiple paid providers)** |
+| **Access Control** | Public swarms | Private, authenticated access | **Private, economic incentives** |
+| **Data Integrity** | Peer-dependent | Guaranteed by your nodes | **Cryptographically verified by providers** |
+| **Performance** | Variable (peer-dependent) | Consistent (your hardware) | **Reputation-based provider selection** |
+| **Economics** | Free but unreliable | Your infrastructure cost | **Pay for service, earn from providing** |
 
-While not P2P, Carbide Node adopts these BitTorrent concepts:
-- **Content addressing**: Files identified by cryptographic hashes
-- **Chunking**: Large files split into manageable pieces for transfer
+### What Carbide Network Learns from BitTorrent and rqbit
+
+The marketplace adopts proven decentralized storage concepts:
+- **Content addressing**: Files identified by cryptographic hashes (like IPFS)
+- **Chunking**: Large files split into manageable pieces for efficient transfer
 - **Deduplication**: Same content stored once, referenced multiple times
-- **Efficient synchronization**: Only changed chunks transferred
+- **Proof systems**: Cryptographic verification of storage (like Filecoin)
+- **Economic incentives**: Market-driven provider participation
 
-## Multi-Node Replication Architecture
+## Decentralized Multi-Provider Architecture
 
-### Node Hierarchy
+### Current Marketplace Model
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Client Layer                           │
-├─────────────────────┬───────────────────────────────────────┤
-│   Mobile Client     │         Desktop Client                │
-│   (Primary Source)  │         (Sync Target)                 │
-└─────────────────────┴───────────────────────────────────────┘
-                              │
-            ┌─────────────────┼─────────────────┐
-            │                 │                 │
-    ┌───────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
-    │ Primary Node │  │Secondary Node│  │Tertiary Node│
-    │ (Home/Local) │  │  (Cloud/VPS) │  │  (Backup)   │
-    └──────────────┘  └─────────────┘  └─────────────┘
-            │                 │                 │
-    ┌───────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
-    │   Storage    │  │   Storage   │  │   Storage   │
-    │   Complete   │  │  Complete   │  │  Complete   │
-    │   Copy A     │  │   Copy B    │  │   Copy C    │
-    └──────────────┘  └─────────────┘  └─────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Client Layer                            │
+├─────────────────────────┬───────────────────────────────────────┤
+│     Mobile Client       │         Desktop Client                │
+│   (Chooses: 3 copies    │    (Chooses: 5 copies               │
+│    $0.005/GB/month)     │     $0.01/GB/month)                  │
+└─────────────────────────┴───────────────────────────────────────┘
+                                    │
+                          ┌─────────┼─────────┐
+                          │         │         │
+              ┌───────────▼─┐   ┌───▼────┐   ┌▼─────────────┐
+              │Discovery &  │   │Gateway │   │Reputation &  │
+              │Marketplace  │   │Nodes   │   │Payment System│
+              └─────────────┘   └────────┘   └──────────────┘
+                          │         │         │
+    ┌─────────────────────┴─────────┼─────────┴─────────────────────┐
+    │              Provider Network (Anyone Can Join)               │
+    ├───────────────────────────────────────────────────────────────┤
+    │ 🏠 Home       🏢 Professional   🏭 Enterprise   🌐 Global     │
+    │ Providers     Providers         Providers       CDN Providers │
+    │ ($0.002/GB)   ($0.004/GB)       ($0.008/GB)    ($0.012/GB)   │
+    │ 95% uptime    99% uptime        99.9% uptime    99.99% uptime │
+    └───────────────────────────────────────────────────────────────┘
 ```
 
-### Node Types and Roles
+### Provider Ecosystem
 
-#### 1. Primary Node
-- **Role**: Main data repository and coordination point
-- **Location**: Typically local (home server, NAS)
-- **Responsibilities**:
-  - Accept all client uploads
-  - Coordinate replication to secondary nodes
-  - Handle conflict resolution
-  - Serve as authoritative source
+Anyone can become a storage provider by running Carbide Provider software:
 
-#### 2. Secondary Nodes
-- **Role**: Hot standby and load distribution
-- **Location**: Cloud providers (AWS, DigitalOcean, etc.)
-- **Responsibilities**:
-  - Maintain synchronized copy of all data
-  - Serve read requests when primary unavailable
-  - Provide geographic distribution
+```bash
+# Quick setup for home providers
+curl -sSL https://get.carbide.network/provider | bash
+carbide-provider init --storage-path /mnt/spare --capacity 1TB
+carbide-provider start --price-per-gb-month 0.002
+```
 
-#### 3. Tertiary Nodes
-- **Role**: Cold backup and disaster recovery
-- **Location**: Different geographic region/provider
-- **Responsibilities**:
-  - Maintain complete backup
-  - Activate only during primary/secondary failures
-  - Long-term data preservation
+### Provider Types and Economics
+
+#### 1. 🏠 Home Providers
+- **Target**: Individuals with spare storage capacity
+- **Pricing**: $0.002/GB/month (competitive with centralized storage)
+- **Requirements**: 500GB+ available space, residential internet
+- **Uptime**: 95% average (suitable for backup storage)
+- **Earnings**: ~$24/year per 1TB (passive income from spare capacity)
+
+#### 2. 🏢 Professional Providers  
+- **Target**: Small businesses, tech enthusiasts, prosumers
+- **Pricing**: $0.004/GB/month (premium for reliability)
+- **Requirements**: Dedicated hardware, UPS backup, business internet
+- **Uptime**: 99% guaranteed (suitable for important data)
+- **Earnings**: ~$48/year per 1TB
+
+#### 3. 🏭 Enterprise Providers
+- **Target**: Data centers, cloud providers, hosting companies  
+- **Pricing**: $0.008/GB/month (premium for high availability)
+- **Requirements**: Enterprise hardware, redundant power, SLA guarantees
+- **Uptime**: 99.9% guaranteed (suitable for critical data)
+- **Earnings**: ~$96/year per 1TB
+
+#### 4. 🌐 Global CDN Providers
+- **Target**: Major cloud providers with global presence
+- **Pricing**: $0.012/GB/month (premium for performance)
+- **Requirements**: Global distribution, edge caching, 24/7 support
+- **Uptime**: 99.99% guaranteed (mission-critical data)
+- **Earnings**: ~$144/year per 1TB
 
 ## Replication Strategies
 
@@ -447,11 +469,28 @@ impl ReplicationMonitor {
 }
 ```
 
-This multi-node replication system gives you:
-- **Data Safety**: Multiple copies across different locations
-- **High Availability**: Automatic failover if nodes go down
-- **Performance**: Load distribution and geographic optimization
-- **Mobile-Friendly**: Smart bandwidth and battery management
-- **Consistency**: Automatic verification and repair of data integrity
+---
 
-Your mobile client can sync to multiple nodes simultaneously, ensuring your data is always safe and accessible from anywhere!
+## Migration to Decentralized Architecture
+
+The above sections describe the **legacy centralized replication** approach. The current **Carbide Network** implements a decentralized marketplace model where:
+
+### Key Differences:
+- **Provider Choice**: Users select from marketplace providers vs. managing own nodes
+- **Economic Model**: Pay providers vs. manage infrastructure costs  
+- **Replication Control**: User-configurable (1-10 copies) vs. fixed architecture
+- **Mobile Optimization**: Smart provider selection based on network conditions
+
+### For Complete Current Architecture:
+See **[DECENTRALIZED_ARCHITECTURE.md](./DECENTRALIZED_ARCHITECTURE.md)** for the full marketplace design including:
+- Provider discovery and selection algorithms
+- Reputation-based trust system  
+- Economic incentives and payment models
+- User-configurable storage tiers
+- Mobile-optimized protocols
+
+The decentralized marketplace provides:
+- **60-80% cost savings** vs. centralized storage
+- **User choice** in replication factor and provider types
+- **Economic incentives** for a sustainable provider ecosystem
+- **Global availability** through diverse provider network
