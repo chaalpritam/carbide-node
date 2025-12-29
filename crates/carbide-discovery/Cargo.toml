@@ -1,0 +1,36 @@
+[package]
+name = "carbide-discovery"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Provider discovery and marketplace logic for Carbide Network"
+repository.workspace = true
+
+[[bin]]
+name = "carbide-discovery"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+carbide-core = { path = "../carbide-core" }
+
+# Web server
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Data structures
+dashmap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }

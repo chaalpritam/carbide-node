@@ -1,0 +1,40 @@
+[package]
+name = "carbide-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Client SDK for connecting to Carbide Network - mobile and desktop optimized"
+repository.workspace = true
+
+[[bin]]
+name = "carbide-client"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+carbide-core = { path = "../carbide-core" }
+carbide-crypto = { path = "../carbide-crypto" }
+
+# Networking
+reqwest = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+
+[features]
+default = []
+# Mobile optimizations
+mobile = []

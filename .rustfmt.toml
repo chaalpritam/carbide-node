@@ -1,0 +1,28 @@
+# Rust formatting configuration
+# This ensures consistent code style across the project
+
+# Line width
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+
+# Import formatting
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+# Function formatting
+fn_single_line = false
+where_single_line = true
+
+# String formatting
+format_strings = true
+
+# Comment formatting
+wrap_comments = true
+comment_width = 100
+
+# Struct formatting
+struct_field_align_threshold = 0
+
+# Edition-specific settings
+edition = "2021"

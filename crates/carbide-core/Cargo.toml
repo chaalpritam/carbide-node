@@ -1,0 +1,42 @@
+[package]
+name = "carbide-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core data structures and utilities for Carbide Network"
+repository.workspace = true
+
+[dependencies]
+# Core data structures
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Time and numeric types
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+
+# Cryptography
+blake3 = { workspace = true }
+ring = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Utilities
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+# Enable blockchain integration
+blockchain = ["dep:ethers"]
+
+[dependencies.ethers]
+workspace = true
+optional = true

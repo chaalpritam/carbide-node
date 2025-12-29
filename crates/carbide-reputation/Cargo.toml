@@ -1,0 +1,26 @@
+[package]
+name = "carbide-reputation"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Reputation system for tracking provider quality and trustworthiness"
+repository.workspace = true
+
+[dependencies]
+# Internal dependencies
+carbide-core = { path = "../carbide-core" }
+
+# Data structures
+serde = { workspace = true }
+dashmap = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Math
+rust_decimal = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+thiserror = { workspace = true }

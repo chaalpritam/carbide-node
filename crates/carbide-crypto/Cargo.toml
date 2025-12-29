@@ -1,0 +1,27 @@
+[package]
+name = "carbide-crypto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cryptographic functions for Carbide Network - content addressing, encryption, proofs"
+repository.workspace = true
+
+[dependencies]
+# Core dependencies
+carbide-core = { path = "../carbide-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Cryptography
+blake3 = { workspace = true }
+ring = { workspace = true }
+aes-gcm = { workspace = true }
+
+# Utilities
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+hex = "0.4"

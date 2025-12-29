@@ -1,0 +1,11 @@
+# Clippy configuration for strict linting
+# This helps catch potential issues and enforces good practices
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 30
+
+# Documentation  
+missing-docs-in-crate-items = true
+
+# Style
+enum-variant-size-threshold = 200
