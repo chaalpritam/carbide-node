@@ -13,14 +13,21 @@ carbide-core = { path = "../carbide-core" }
 
 # Data structures
 serde = { workspace = true }
+serde_json = { workspace = true }
 dashmap = { workspace = true }
 
 # Time
 chrono = { workspace = true }
 
 # Math
-rust_decimal = { workspace = true }
+rust_decimal = { workspace = true, features = ["serde-arbitrary-precision"] }
+num-traits = "0.2"
 
 # Utilities
 uuid = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Async
+async-trait = "0.1"
+tokio = { workspace = true }

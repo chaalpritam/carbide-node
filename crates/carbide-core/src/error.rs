@@ -29,6 +29,10 @@ pub enum CarbideError {
     #[error("Reputation error: {0}")]
     Reputation(String),
 
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     /// Generic internal errors
     #[error("Internal error: {0}")]
     Internal(String),
