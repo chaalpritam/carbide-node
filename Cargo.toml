@@ -58,6 +58,9 @@ dashmap = "5.5"
 
 # Development and testing
 criterion = "0.5"
+futures = "0.3"
+rand = "0.8"
+tokio-test = "0.4"
 
 # Optional features for blockchain integration  
 ethers = "2.0"

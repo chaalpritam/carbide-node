@@ -1,0 +1,41 @@
+[package]
+name = "carbide-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# All Carbide crates
+carbide-core = { path = "../crates/carbide-core" }
+carbide-crypto = { path = "../crates/carbide-crypto" }
+carbide-provider = { path = "../crates/carbide-provider" }
+carbide-discovery = { path = "../crates/carbide-discovery" }
+carbide-client = { path = "../crates/carbide-client" }
+carbide-reputation = { path = "../crates/carbide-reputation" }
+
+# Test dependencies
+tokio = { workspace = true, features = ["test-util", "time"] }
+tokio-test = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
+
+# Async and utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }
+
+# Networking for integration tests
+reqwest = { workspace = true }
+
+# Logging and tracing for tests
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Performance testing
+criterion = { workspace = true }
+
+# Other test utilities
+anyhow = { workspace = true }
+thiserror = { workspace = true }

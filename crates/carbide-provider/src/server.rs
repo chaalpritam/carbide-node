@@ -759,7 +759,7 @@ mod tests {
             Decimal::new(2, 3), // $0.002
         );
 
-        let server = ProviderServer::new(config, provider.clone());
+        let server = ProviderServer::new(config, provider.clone()).unwrap();
         
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);
