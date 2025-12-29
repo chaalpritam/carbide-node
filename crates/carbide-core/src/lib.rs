@@ -14,6 +14,7 @@ pub use uuid::Uuid;
 // Core modules - we'll implement these in the next steps
 pub mod crypto;
 pub mod error;
+pub mod network;
 pub mod types;
 
 // Re-exports for easy access
