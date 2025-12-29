@@ -23,6 +23,9 @@ rust_decimal = { workspace = true }
 blake3 = { workspace = true }
 ring = { workspace = true }
 
+# Hex encoding for content hashes
+hex = "0.4"
+
 # Async runtime
 tokio = { workspace = true }
 

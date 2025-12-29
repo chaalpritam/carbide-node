@@ -544,6 +544,7 @@ dependencies = [
  "blake3",
  "chrono",
  "ethers",
+ "hex",
  "ring 0.17.14",
  "rust_decimal",
  "serde",
