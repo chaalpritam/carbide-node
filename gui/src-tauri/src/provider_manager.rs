@@ -1,6 +1,6 @@
 // Provider management for the GUI backend
 
-use crate::{ProviderStatus, SystemMetrics};
+use crate::ProviderStatus;
 use anyhow::Result;
 use carbide_provider::ProviderConfig;
 use std::path::PathBuf;

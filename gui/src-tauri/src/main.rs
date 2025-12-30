@@ -4,18 +4,14 @@
     windows_subsystem = "windows"
 )]
 
-use anyhow::Result;
-use carbide_provider::ProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri::{
-    CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
-    SystemTrayMenuItem, Window,
+    CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
+    SystemTrayMenuItem,
 };
-use tokio::fs;
 
 mod commands;
 mod provider_manager;
