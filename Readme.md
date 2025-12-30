@@ -72,13 +72,27 @@ cargo run --bin carbide-provider -- start \
 - **🏭 Enterprise**: Data center grade, premium pricing
 - **🌐 GlobalCDN**: High-performance edge storage
 
-### For Data Users
-**Mobile and desktop clients** with customizable storage tiers:
+### For Data Users (Mobile & Desktop Clients)
 
+**📱 Mobile App**: iOS/Android app for uploading files to the provider network
+**Status**: In development - See [MOBILE_APP_INTEGRATION.md](MOBILE_APP_INTEGRATION.md) for implementation roadmap
+
+**Customizable storage tiers**:
 ```toml
 # Critical files: 5 copies, enterprise providers, $0.01/GB/month
 # Important files: 3 copies, mixed providers, $0.005/GB/month
 # Backup files: 2 copies, home providers, $0.002/GB/month
+```
+
+**Getting Started with Mobile Development**:
+```bash
+# See complete integration guide
+cat MOBILE_APP_INTEGRATION.md
+
+# Key components to build:
+# 1. Discovery Service (find providers worldwide)
+# 2. Swift/Kotlin SDK (upload/download files)
+# 3. Client-side encryption (zero-knowledge storage)
 ```
 
 ## 🎯 Key Features
@@ -123,11 +137,18 @@ Automated selection based on:
 carbide-node/
 ├── README.md                     # This file
 ├── ARCHITECTURE.md               # Centralized architecture (legacy)
-├── DECENTRALIZED_ARCHITECTURE.md # Complete marketplace design  
+├── DECENTRALIZED_ARCHITECTURE.md # Complete marketplace design
 ├── REPLICATION.md                # Multi-node replication strategies
 ├── IMPLEMENTATION_PLAN.md        # Detailed development roadmap
+├── MOBILE_APP_INTEGRATION.md     # Mobile app → provider network integration guide
 ├── CLAUDE.md                     # Development guidance
 ├── Cargo.toml                    # Workspace configuration
+├── gui/                          # Desktop GUI application (Tauri + React)
+│   ├── src/                      # React frontend
+│   └── src-tauri/                # Rust backend
+├── services/                     # Network services
+│   ├── carbide-discovery/        # Discovery service (TODO)
+│   └── carbide-gateway/          # Gateway service (TODO)
 └── crates/                       # Rust implementation
     ├── carbide-core/             # Core data structures and types
     ├── carbide-crypto/           # Cryptographic primitives

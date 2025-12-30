@@ -193,11 +193,13 @@ struct ReputationScore {
 - **[DECENTRALIZED_ARCHITECTURE.md](./DECENTRALIZED_ARCHITECTURE.md)** - Complete marketplace system design
 - **[README.md](./README.md)** - Project overview and getting started
 - **[REPLICATION.md](./REPLICATION.md)** - Multi-provider replication strategies
+- **[MOBILE_APP_INTEGRATION.md](./MOBILE_APP_INTEGRATION.md)** - Mobile app → provider network integration guide (NEW!)
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Original centralized design (legacy)
 
 ## Related Components
 
 - **Mobile Client**: Located at `/Users/chaalpritam/Blockbase/Carbide` (iOS/Android storage app)
+  - See [MOBILE_APP_INTEGRATION.md](./MOBILE_APP_INTEGRATION.md) for complete integration roadmap
 - **Desktop Client**: Located at `/Users/chaalpritam/Blockbase/CarbideDrive` (Desktop sync application)
 
 ## Development Priorities
