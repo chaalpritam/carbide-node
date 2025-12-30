@@ -30,24 +30,50 @@ impl ProviderManager {
         let config_path = self.carbide_home.join("config").join("provider.toml");
         let binary_path = self.carbide_home.join("bin").join("carbide-provider");
 
-        if !config_path.exists() || !binary_path.exists() {
-            return Err(anyhow::anyhow!("Carbide not installed"));
+        if !config_path.exists() {
+            return Err(anyhow::anyhow!("Configuration file not found at: {}", config_path.display()));
         }
 
-        // Start the provider process
+        if !binary_path.exists() {
+            return Err(anyhow::anyhow!("Carbide binary not found at: {}", binary_path.display()));
+        }
+
+        // Create log directory if it doesn't exist
+        let log_dir = self.carbide_home.join("logs");
+        let _ = std::fs::create_dir_all(&log_dir);
+
+        // Redirect output to log files
+        let stdout_log = std::fs::File::create(log_dir.join("provider.out.log"))?;
+        let stderr_log = std::fs::File::create(log_dir.join("provider.err.log"))?;
+
+        // Start the provider process with detached mode
         let child = Command::new(&binary_path)
             .arg("--config")
             .arg(&config_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::from(stdout_log))
+            .stderr(Stdio::from(stderr_log))
             .spawn()?;
 
         self.provider_process = Some(child);
 
         // Wait a moment to ensure it starts properly
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(3000)).await;
 
-        Ok(self.is_running().await?)
+        // Check if it's actually running
+        let is_running = self.is_running().await?;
+
+        if !is_running {
+            // Try to read error logs
+            let err_log = log_dir.join("provider.err.log");
+            if let Ok(error_content) = std::fs::read_to_string(&err_log) {
+                if !error_content.is_empty() {
+                    return Err(anyhow::anyhow!("Provider failed to start: {}", error_content));
+                }
+            }
+            return Err(anyhow::anyhow!("Provider process started but not responding on port"));
+        }
+
+        Ok(true)
     }
 
     pub async fn stop(&mut self) -> Result<bool> {

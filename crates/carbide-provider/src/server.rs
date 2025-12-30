@@ -118,10 +118,9 @@ pub struct StorageStats {
 
 impl ProviderServer {
     /// Create a new provider server
-    pub fn new(config: ServerConfig, provider: Provider) -> Result<Self> {
-        let storage_dir = PathBuf::from("./storage")
-            .join(provider.id.to_string());
-        
+    pub fn new(config: ServerConfig, provider: Provider, storage_path: PathBuf) -> Result<Self> {
+        let storage_dir = storage_path.join(provider.id.to_string());
+
         // Create storage directory if it doesn't exist
         fs::create_dir_all(&storage_dir)
             .map_err(|e| CarbideError::Internal(
@@ -759,8 +758,9 @@ mod tests {
             Decimal::new(2, 3), // $0.002
         );
 
-        let server = ProviderServer::new(config, provider.clone()).unwrap();
-        
+        let storage_path = PathBuf::from("./test_storage");
+        let server = ProviderServer::new(config, provider.clone(), storage_path).unwrap();
+
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);
     }

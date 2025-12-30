@@ -165,8 +165,9 @@ async fn main() -> Result<()> {
             };
 
             // Create and start the server
-            let server = ProviderServer::new(config, provider)?;
-            
+            let storage_path = PathBuf::from("./storage");
+            let server = ProviderServer::new(config, provider, storage_path)?;
+
             // Start server in background task
             let server_handle = tokio::spawn(async move {
                 if let Err(e) = server.start().await {
@@ -282,8 +283,8 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
     };
     
     // Create and start the server
-    let server = ProviderServer::new(server_config, provider)?;
-    
+    let server = ProviderServer::new(server_config, provider, config.provider.storage_path.clone())?;
+
     // Start server in background task
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server.start().await {
