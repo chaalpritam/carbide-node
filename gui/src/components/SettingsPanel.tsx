@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { ProviderConfig } from "../types";
-import { Settings, Save, RotateCcw, AlertCircle } from "lucide-react";
+import { Settings, Save, RotateCcw, AlertCircle, RefreshCw, Trash2, AlertTriangle } from "lucide-react";
 
 interface SettingsPanelProps {
   onSave: () => void;
@@ -14,6 +14,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showReinstallConfirm, setShowReinstallConfirm] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isReinstalling, setIsReinstalling] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -70,6 +74,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSave }) => {
       return available;
     } catch {
       return false;
+    }
+  };
+
+  const handleResetProvider = async () => {
+    setIsResetting(true);
+    setError(null);
+
+    try {
+      await invoke("reset_provider");
+      setSuccessMessage("Provider data reset successfully! Storage and logs cleared.");
+      setShowResetConfirm(false);
+      setTimeout(() => {
+        setSuccessMessage(null);
+        onSave(); // Refresh the dashboard
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to reset provider:", error);
+      setError(String(error));
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleReinstallProvider = async () => {
+    setIsReinstalling(true);
+    setError(null);
+
+    try {
+      await invoke("reinstall_provider");
+      setSuccessMessage("Provider uninstalled successfully! Restarting installation wizard...");
+      setShowReinstallConfirm(false);
+      setTimeout(() => {
+        window.location.reload(); // Reload to show installation wizard
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to reinstall provider:", error);
+      setError(String(error));
+      setIsReinstalling(false);
     }
   };
 
@@ -414,7 +456,181 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSave }) => {
             />
           </div>
         </div>
+
+        {/* Danger Zone */}
+        <div className="border-t border-gray-200 pt-8">
+          <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6">
+            <div className="flex items-start mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+              <div>
+                <h3 className="text-lg font-semibold text-red-900 mb-1">Danger Zone</h3>
+                <p className="text-sm text-red-700">
+                  These actions are destructive and cannot be undone. Proceed with caution.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Reset Provider */}
+              <div className="bg-white border border-red-200 rounded-lg p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900 mb-1">Reset Provider Data</h4>
+                    <p className="text-sm text-gray-600">
+                      Clear all stored files and logs while keeping your configuration.
+                      The provider will be stopped and all storage data will be permanently deleted.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowResetConfirm(true)}
+                    className="ml-4 flex items-center space-x-2 px-4 py-2 bg-white border-2 border-red-500 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Reset Data</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Reinstall Provider */}
+              <div className="bg-white border border-red-200 rounded-lg p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900 mb-1">Reinstall Provider</h4>
+                    <p className="text-sm text-gray-600">
+                      Completely uninstall the provider and start fresh. This will remove all configuration,
+                      data, logs, and settings. You will need to run the installation wizard again.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowReinstallConfirm(true)}
+                    className="ml-4 flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Reinstall</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-start mb-4">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              </div>
+              <div className="ml-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  Reset Provider Data?
+                </h3>
+                <p className="text-sm text-gray-600">
+                  This will permanently delete all stored files and logs. Your configuration will be preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-yellow-800">
+                <strong>Warning:</strong> This action cannot be undone. All stored data will be lost.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResetting}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetProvider}
+                disabled={isResetting}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-300 text-white rounded-lg transition-colors flex items-center space-x-2"
+              >
+                {isResetting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Resetting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Yes, Reset Data</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reinstall Confirmation Modal */}
+      {showReinstallConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-start mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="ml-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  Reinstall Provider?
+                </h3>
+                <p className="text-sm text-gray-600">
+                  This will completely uninstall the provider and remove all data, configuration, and settings.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-800 mb-2">
+                <strong>⚠️ This action cannot be undone!</strong>
+              </p>
+              <p className="text-sm text-red-700">
+                The following will be permanently deleted:
+              </p>
+              <ul className="text-sm text-red-700 list-disc list-inside mt-1 space-y-1">
+                <li>All provider configuration</li>
+                <li>All stored files and data</li>
+                <li>All logs and history</li>
+                <li>Auto-start settings</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3">
+              <button
+                onClick={() => setShowReinstallConfirm(false)}
+                disabled={isReinstalling}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReinstallProvider}
+                disabled={isReinstalling}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-lg transition-colors flex items-center space-x-2"
+              >
+                {isReinstalling ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Uninstalling...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes, Reinstall Provider</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

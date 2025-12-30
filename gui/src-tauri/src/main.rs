@@ -144,7 +144,9 @@ fn main() {
             get_system_info,
             check_port_available,
             estimate_earnings,
-            send_notification
+            send_notification,
+            reset_provider,
+            reinstall_provider
         ])
         .run(context)
         .expect("error while running tauri application");

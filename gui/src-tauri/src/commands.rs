@@ -464,3 +464,82 @@ fn parse_pages(line: &str) -> u64 {
         .and_then(|s| s.trim_end_matches('.').parse().ok())
         .unwrap_or(0)
 }
+
+#[command]
+pub async fn reset_provider(state: State<'_, AppState>) -> Result<bool, String> {
+    let carbide_home = &state.carbide_home;
+
+    // Stop provider if running
+    let mut manager = state.provider_manager.lock().await;
+    let _ = manager.stop().await;
+    drop(manager); // Release lock
+
+    // Clear storage directory
+    let storage_path = carbide_home.join("data").join("storage");
+    if storage_path.exists() {
+        fs::remove_dir_all(&storage_path).await
+            .map_err(|e| format!("Failed to clear storage: {}", e))?;
+        fs::create_dir_all(&storage_path).await
+            .map_err(|e| format!("Failed to recreate storage directory: {}", e))?;
+    }
+
+    // Clear logs
+    let logs_path = carbide_home.join("logs");
+    if logs_path.exists() {
+        let _ = fs::remove_file(logs_path.join("provider.log")).await;
+        let _ = fs::remove_file(logs_path.join("provider.out.log")).await;
+        let _ = fs::remove_file(logs_path.join("provider.err.log")).await;
+    }
+
+    tracing::info!("Provider data reset successfully");
+    Ok(true)
+}
+
+#[command]
+pub async fn reinstall_provider(state: State<'_, AppState>) -> Result<bool, String> {
+    let carbide_home = &state.carbide_home;
+
+    // Stop provider if running
+    let mut manager = state.provider_manager.lock().await;
+    let _ = manager.stop().await;
+    drop(manager); // Release lock
+
+    // Remove configuration
+    let config_path = carbide_home.join("config").join("provider.toml");
+    if config_path.exists() {
+        fs::remove_file(&config_path).await
+            .map_err(|e| format!("Failed to remove config: {}", e))?;
+    }
+
+    // Clear all data directories
+    let paths_to_clear = vec![
+        carbide_home.join("data"),
+        carbide_home.join("logs"),
+        carbide_home.join("keys"),
+    ];
+
+    for path in paths_to_clear {
+        if path.exists() {
+            fs::remove_dir_all(&path).await
+                .map_err(|e| format!("Failed to clear {}: {}", path.display(), e))?;
+        }
+    }
+
+    // Unload LaunchAgent if exists
+    let home_dir = std::env::var("HOME").unwrap_or_default();
+    let plist_path = PathBuf::from(&home_dir)
+        .join("Library")
+        .join("LaunchAgents")
+        .join("com.carbide.provider.plist");
+
+    if plist_path.exists() {
+        let _ = Command::new("launchctl")
+            .arg("unload")
+            .arg(&plist_path)
+            .output();
+        let _ = fs::remove_file(&plist_path).await;
+    }
+
+    tracing::info!("Provider uninstalled successfully");
+    Ok(true)
+}
