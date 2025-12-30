@@ -8,6 +8,7 @@ use std::process::{Child, Command, Stdio};
 use tokio::fs;
 use tokio::process::Command as AsyncCommand;
 
+#[derive(Debug)]
 pub struct ProviderManager {
     carbide_home: PathBuf,
     provider_process: Option<Child>,
@@ -106,7 +107,7 @@ impl ProviderManager {
         let running = self.is_running().await?;
 
         // Calculate storage usage
-        let (storage_used_gb, files_count) = if storage_path.exists() {
+        let (storage_used_gb, _files_count) = if storage_path.exists() {
             self.calculate_storage_usage(&storage_path).await?
         } else {
             (0.0, 0)
@@ -163,8 +164,9 @@ impl ProviderManager {
         }
 
         let content = fs::read_to_string(&log_file).await?;
-        let log_lines: Vec<String> = content
-            .lines()
+        let all_lines: Vec<&str> = content.lines().collect();
+        let log_lines: Vec<String> = all_lines
+            .iter()
             .rev()
             .take(lines)
             .rev()

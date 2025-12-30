@@ -89,9 +89,10 @@ pub async fn install_carbide(
     let _ = window.emit("install-progress", &progress);
     
     // Get the project root (parent of gui directory)
+    let current_dir = std::env::current_dir().unwrap();
     let project_root = carbide_home.parent()
         .and_then(|p| p.parent())
-        .unwrap_or_else(|| std::env::current_dir().unwrap().as_path());
+        .unwrap_or_else(|| current_dir.as_path());
     
     let build_output = Command::new("cargo")
         .arg("build")
@@ -230,7 +231,7 @@ pub async fn install_carbide(
 
 #[command]
 pub async fn get_provider_status(state: State<'_, AppState>) -> Result<ProviderStatus, String> {
-    let manager = state.provider_manager.lock().map_err(|e| e.to_string())?;
+    let manager = state.provider_manager.lock().await;
     manager.get_status().await.map_err(|e| e.to_string())
 }
 
@@ -252,13 +253,13 @@ pub async fn get_system_metrics() -> Result<SystemMetrics, String> {
 
 #[command]
 pub async fn start_provider(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut manager = state.provider_manager.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.provider_manager.lock().await;
     manager.start().await.map_err(|e| e.to_string())
 }
 
 #[command]
 pub async fn stop_provider(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut manager = state.provider_manager.lock().map_err(|e| e.to_string())?;
+    let mut manager = state.provider_manager.lock().await;
     manager.stop().await.map_err(|e| e.to_string())
 }
 
@@ -305,8 +306,9 @@ pub async fn get_logs(lines: Option<usize>, state: State<'_, AppState>) -> Resul
         .map_err(|e| format!("Failed to read logs: {}", e))?;
     
     let lines = lines.unwrap_or(50);
-    let log_lines: Vec<String> = content
-        .lines()
+    let all_lines: Vec<&str> = content.lines().collect();
+    let log_lines: Vec<String> = all_lines
+        .iter()
         .rev()
         .take(lines)
         .rev()

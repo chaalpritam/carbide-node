@@ -9,6 +9,10 @@ members = [
     "crates/carbide-crypto",
     "demo"
 ]
+# Exclude the Tauri GUI from the workspace since it's a separate project
+exclude = [
+    "gui/src-tauri"
+]
 # Use the modern resolver for edition 2021
 resolver = "2"
 

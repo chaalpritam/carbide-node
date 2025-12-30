@@ -9,7 +9,8 @@ use carbide_provider::ProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tauri::{
     CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
     SystemTrayMenuItem, Window,
@@ -23,7 +24,7 @@ mod system_info;
 use commands::*;
 use provider_manager::ProviderManager;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct AppState {
     pub carbide_home: PathBuf,
     pub provider_manager: Arc<Mutex<ProviderManager>>,
