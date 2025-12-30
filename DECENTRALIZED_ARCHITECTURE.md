@@ -1,8 +1,12 @@
 # Carbide Network: Decentralized Storage Marketplace Architecture
 
+**v1.0.0 Implementation Status**: Core architecture implemented and working
+
 ## Vision Statement
 
-Carbide Network transforms into a **decentralized storage marketplace** where anyone can contribute storage capacity and earn rewards, while users get affordable, secure, and customizable data storage with user-defined replication factors and pricing tiers.
+Carbide Network is a **working decentralized storage marketplace** where anyone can contribute storage capacity and earn rewards, while users get affordable, secure, and customizable data storage with user-defined replication factors and pricing tiers.
+
+**Current Status**: The architecture described in this document has been successfully implemented in v1.0.0, with a fully functional Mac provider node, desktop GUI application, and complete backend infrastructure.
 
 ## Architecture Overview
 
@@ -40,9 +44,11 @@ Carbide Network transforms into a **decentralized storage marketplace** where an
 
 ## Core Components
 
-### 1. Storage Provider Nodes (`carbide-provider`)
+### 1. Storage Provider Nodes (`carbide-provider`) ✅ **IMPLEMENTED**
 
 **Anyone can run a Carbide Provider Node** to earn money by contributing storage space.
+
+**Implementation Status**: Fully working provider node with HTTP API, storage management, configuration system, and beautiful desktop GUI application.
 
 #### Provider Types:
 ```rust
@@ -68,24 +74,34 @@ enum ProviderType {
 }
 ```
 
-#### Provider Setup Process:
+#### Provider Setup Process (v1.0.0 - Working):
 ```bash
-# 1. Download and install Carbide Provider
-curl -sSL https://get.carbide.network/provider | bash
+# Option 1: Use GUI Installer (Recommended) ✅
+# Download CarbideProvider-Installer-1.0.0.dmg
+# Install and run the setup wizard
 
-# 2. Configure storage allocation
-carbide-provider init --storage-path /mnt/carbide --capacity 1TB
+# Option 2: Command-line Installation ✅
+./install.sh  # Automated Mac mini setup
 
-# 3. Set pricing and preferences
-carbide-provider config --price-per-gb-month 0.002 --min-duration 30d
+# Option 3: Manual Setup ✅
+cargo build --release
+cargo run --bin carbide-provider -- init \
+  --storage-path ./storage \
+  --capacity 25GB \
+  --tier home \
+  --region northamerica
 
-# 4. Join the network
-carbide-provider start --announce
+cargo run --bin carbide-provider -- start \
+  --name "My Provider" \
+  --price-per-gb-month 0.005 \
+  --port 8080
 ```
 
-### 2. Client Storage Configuration
+### 2. Client Storage Configuration ✅ **BASIC IMPLEMENTATION**
 
 **Users configure their storage preferences** during signup or per-file.
+
+**Implementation Status**: Basic client SDK and CLI tools implemented. Mobile-specific optimizations planned for Phase 2.
 
 #### Storage Tiers:
 ```rust
@@ -140,7 +156,9 @@ min_uptime = 0.90
 exclude_home_providers = false
 ```
 
-### 3. Network Discovery & Marketplace
+### 3. Network Discovery & Marketplace ✅ **IMPLEMENTED**
+
+**Implementation Status**: Full discovery service with provider registry, health checking, and marketplace coordination.
 
 #### Discovery Nodes (`carbide-discovery`)
 ```rust
@@ -189,9 +207,11 @@ struct PricingModel {
 }
 ```
 
-### 4. Smart Contract Layer (Optional Blockchain Integration)
+### 4. Smart Contract Layer ⏳ **PLANNED FOR PHASE 3**
 
-#### Storage Contracts:
+**Implementation Status**: Not yet implemented. Planned for Phase 3 (Economic Infrastructure).
+
+#### Storage Contracts (Future):
 ```solidity
 contract CarbideStorageContract {
     struct StorageDeal {
@@ -226,7 +246,9 @@ contract CarbideStorageContract {
 }
 ```
 
-### 5. Reputation System
+### 5. Reputation System ✅ **IMPLEMENTED**
+
+**Implementation Status**: Basic reputation tracking implemented with uptime monitoring and scoring. Advanced proof-of-storage verification planned for Phase 2.
 
 #### Multi-Dimensional Reputation:
 ```rust

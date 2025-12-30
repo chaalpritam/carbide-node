@@ -1,6 +1,8 @@
 # Carbide Network Replication & Multi-Provider Architecture
 
-> **Note**: This document has been updated to reflect the **decentralized marketplace** architecture. For the original centralized approach, see the legacy sections.
+**v1.0.0 Implementation Status**: Core multi-provider architecture implemented and tested
+
+> **Note**: This document describes the replication architecture, with basic multi-provider support implemented in v1.0.0. Advanced features like automated failover and dynamic replication are planned for Phase 2.
 
 ## Storage Model Evolution
 
@@ -55,15 +57,28 @@ The marketplace adopts proven decentralized storage concepts:
     └───────────────────────────────────────────────────────────────┘
 ```
 
-### Provider Ecosystem
+### Provider Ecosystem ✅ **WORKING IN v1.0.0**
 
 Anyone can become a storage provider by running Carbide Provider software:
 
 ```bash
-# Quick setup for home providers
-curl -sSL https://get.carbide.network/provider | bash
-carbide-provider init --storage-path /mnt/spare --capacity 1TB
-carbide-provider start --price-per-gb-month 0.002
+# Option 1: Use GUI Installer (Mac mini) ✅
+# Download and install CarbideProvider-Installer-1.0.0.dmg
+
+# Option 2: Automated installation ✅
+./install.sh  # Mac mini with 25GB allocation
+
+# Option 3: Manual setup ✅
+cargo build --release
+cargo run --bin carbide-provider -- init \
+  --storage-path ./storage \
+  --capacity 25GB \
+  --tier home \
+  --region northamerica
+
+cargo run --bin carbide-provider -- start \
+  --price-per-gb-month 0.005 \
+  --port 8080
 ```
 
 ### Provider Types and Economics
