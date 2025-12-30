@@ -8,6 +8,8 @@
 #![warn(clippy::all, clippy::pedantic)]
 
 pub mod server;
+pub mod config;
 
 // Re-exports for convenience
 pub use server::{ProviderServer, ServerConfig};
+pub use config::ProviderConfig;

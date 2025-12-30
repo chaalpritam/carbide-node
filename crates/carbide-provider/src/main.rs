@@ -4,17 +4,23 @@
 //! storage capacity to the Carbide Network.
 
 use carbide_core::{Provider, ProviderTier, Region};
-use carbide_provider::{ProviderServer, ServerConfig};
+use carbide_provider::{ProviderServer, ServerConfig, ProviderConfig};
 use clap::Parser;
 use rust_decimal::Decimal;
 use std::time::Duration;
+use std::path::PathBuf;
+use anyhow::{Context, Result};
 
 #[derive(Parser)]
 #[command(name = "carbide-provider")]
 #[command(about = "Carbide Network Storage Provider - Earn money by providing storage")]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
+    
+    /// Configuration file path
+    #[arg(long, short = 'c', global = true)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Parser)]
@@ -64,13 +70,40 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     // Initialize tracing for logging
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
 
-    match cli.command {
+    // Check if config file provided
+    if let Some(config_path) = &cli.config {
+        return run_with_config(config_path).await;
+    }
+    
+    // If no command provided, try to find default config
+    let command = cli.command.unwrap_or_else(|| {
+        // Look for default config in common locations
+        let default_configs = [
+            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".carbide/config/provider.toml")),
+            Some(PathBuf::from("/usr/local/etc/carbide/provider.toml")),
+            Some(PathBuf::from("./provider.toml")),
+        ];
+        
+        for config_path in default_configs.into_iter().flatten() {
+            if config_path.exists() {
+                println!("📁 Found config file: {}", config_path.display());
+                // We need to handle this differently - let's create a special status command
+                return Command::Status { endpoint: config_path.to_string_lossy().to_string() };
+            }
+        }
+        
+        println!("❌ No configuration found. Please provide --config or use a subcommand.");
+        println!("💡 Try running: carbide-provider init --help");
+        std::process::exit(1);
+    });
+    
+    match command {
         Command::Init {
             storage_path,
             capacity,
@@ -154,6 +187,12 @@ async fn main() -> anyhow::Result<()> {
             println!("✅ Provider shut down gracefully");
         }
         Command::Status { endpoint } => {
+            // Check if this is actually a config file path (from our default config detection)
+            let endpoint_path = PathBuf::from(&endpoint);
+            if endpoint_path.exists() && endpoint_path.extension().map_or(false, |ext| ext == "toml") {
+                return run_with_config(&endpoint_path).await;
+            }
+            
             println!("📊 Checking Provider Status at {}...", endpoint);
             
             // Make HTTP request to provider's status endpoint
@@ -183,6 +222,118 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Run provider using configuration file
+async fn run_with_config(config_path: &PathBuf) -> Result<()> {
+    println!("🔧 Loading configuration from: {}", config_path.display());
+    
+    // Load configuration
+    let config = ProviderConfig::load_from_file(config_path)
+        .await
+        .with_context(|| format!("Failed to load config from: {}", config_path.display()))?;
+    
+    // Create storage directory if it doesn't exist
+    tokio::fs::create_dir_all(&config.provider.storage_path)
+        .await
+        .with_context(|| "Failed to create storage directory")?;
+    
+    // Create log directory
+    if let Some(log_dir) = config.logging.file.parent() {
+        tokio::fs::create_dir_all(log_dir)
+            .await
+            .with_context(|| "Failed to create log directory")?;
+    }
+    
+    println!("🏪 Starting Carbide Provider...");
+    println!("   Name: {}", config.provider.name);
+    println!("   Tier: {}", config.provider.tier);
+    println!("   Region: {}", config.provider.region);
+    println!("   Storage: {} ({}GB max)", config.provider.storage_path.display(), config.provider.max_storage_gb);
+    println!("   Price: ${:.4}/GB/month", config.pricing.price_per_gb_month);
+    println!("   Port: {}", config.provider.port);
+    
+    // Parse tier and region
+    let provider_tier = parse_tier(&config.provider.tier)?;
+    let provider_region = parse_region(&config.provider.region)?;
+    
+    // Create provider instance
+    let capacity_bytes = config.provider.max_storage_gb * 1024 * 1024 * 1024;
+    let price = Decimal::new((config.pricing.price_per_gb_month * 1000.0) as i64, 3);
+    let endpoint = format!("http://{}", config.network.advertise_address);
+    
+    let provider = Provider::new(
+        config.provider.name.clone(),
+        provider_tier,
+        provider_region,
+        endpoint,
+        capacity_bytes,
+        price,
+    );
+    
+    // Create server configuration
+    let server_config = ServerConfig {
+        host: "0.0.0.0".to_string(),
+        port: config.provider.port,
+        request_timeout: Duration::from_secs(30),
+        max_upload_size: 100 * 1024 * 1024, // 100MB
+        enable_cors: true,
+    };
+    
+    // Create and start the server
+    let server = ProviderServer::new(server_config, provider)?;
+    
+    // Start server in background task
+    let server_handle = tokio::spawn(async move {
+        if let Err(e) = server.start().await {
+            eprintln!("❌ Server error: {}", e);
+        }
+    });
+    
+    // Health check reporting task (if enabled)
+    let health_check_handle = if config.reputation.enable_reporting {
+        let provider_name = config.provider.name.clone();
+        let interval = Duration::from_secs(config.reputation.health_check_interval);
+        
+        Some(tokio::spawn(async move {
+            let mut interval_timer = tokio::time::interval(interval);
+            loop {
+                interval_timer.tick().await;
+                
+                // Report health status to discovery service
+                // In a real implementation, this would send actual metrics
+                tracing::info!("Health check: Provider '{}' is healthy", provider_name);
+            }
+        }))
+    } else {
+        None
+    };
+    
+    println!("✅ Provider started successfully!");
+    println!("🌐 Listening on: http://localhost:{}", config.provider.port);
+    println!("📊 Status endpoint: http://localhost:{}/api/v1/provider/status", config.provider.port);
+    println!("💾 Storage directory: {}", config.provider.storage_path.display());
+    println!("📝 Logs: {}", config.logging.file.display());
+    println!();
+    println!("🛑 Press Ctrl+C to stop the provider");
+    
+    // Wait for shutdown signal
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("\\n🛑 Received shutdown signal, stopping provider...");
+        }
+        _ = server_handle => {
+            println!("🛑 Server stopped unexpectedly");
+        }
+    }
+    
+    // Clean shutdown
+    if let Some(health_handle) = health_check_handle {
+        health_handle.abort();
+    }
+    
+    println!("✅ Provider shut down gracefully");
     Ok(())
 }
 
