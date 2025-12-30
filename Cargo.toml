@@ -6,7 +6,8 @@ members = [
     "crates/carbide-discovery",
     "crates/carbide-client",
     "crates/carbide-reputation",
-    "crates/carbide-crypto"
+    "crates/carbide-crypto",
+    "demo"
 ]
 # Use the modern resolver for edition 2021
 resolver = "2"

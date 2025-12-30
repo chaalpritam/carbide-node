@@ -1,0 +1,38 @@
+[package]
+name = "carbide-demo"
+version = "0.1.0"
+edition = "2021"
+description = "Interactive demo for Carbide Network decentralized storage marketplace"
+
+[[bin]]
+name = "carbide-demo"
+path = "main.rs"
+
+[dependencies]
+# All Carbide crates
+carbide-core = { path = "../crates/carbide-core" }
+carbide-crypto = { path = "../crates/carbide-crypto" }
+carbide-client = { path = "../crates/carbide-client" }
+carbide-reputation = { path = "../crates/carbide-reputation" }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# CLI
+clap = "2.34"
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }
+rand = "0.8"
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
