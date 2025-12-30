@@ -63,71 +63,67 @@ pub async fn install_carbide(
         }
     }
     
-    // Step 2: Check for Rust/Cargo
-    progress.step = "Checking Rust installation".to_string();
-    progress.progress = 20;
-    progress.message = "Verifying Rust toolchain...".to_string();
-    let _ = window.emit("install-progress", &progress);
-    
-    let cargo_check = Command::new("cargo").arg("--version").output();
-    if cargo_check.is_err() {
-        progress.step = "Installing Rust".to_string();
-        progress.progress = 25;
-        progress.message = "Installing Rust toolchain...".to_string();
-        let _ = window.emit("install-progress", &progress);
-        
-        // Install Rust (simplified - in real implementation, you'd download and run rustup)
-        progress.error = Some("Rust not found. Please install Rust manually and restart.".to_string());
-        let _ = window.emit("install-progress", &progress);
-        return Err("Rust not found".to_string());
-    }
-    
-    // Step 3: Build Carbide binaries
-    progress.step = "Building Carbide binaries".to_string();
+    // Step 2: Extract bundled binaries
+    progress.step = "Installing Carbide binaries".to_string();
     progress.progress = 40;
-    progress.message = "Compiling Carbide Node (this may take several minutes)...".to_string();
+    progress.message = "Extracting pre-built binaries...".to_string();
     let _ = window.emit("install-progress", &progress);
-    
-    // Get the project root (parent of gui directory)
-    let current_dir = std::env::current_dir().unwrap();
-    let project_root = carbide_home.parent()
-        .and_then(|p| p.parent())
-        .unwrap_or_else(|| current_dir.as_path());
-    
-    let build_output = Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .arg("--bin")
-        .arg("carbide-provider")
-        .current_dir(project_root)
-        .output();
-    
-    match build_output {
-        Ok(output) if output.status.success() => {
-            progress.progress = 60;
-            progress.message = "Build completed successfully".to_string();
-            let _ = window.emit("install-progress", &progress);
-        }
-        Ok(output) => {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            progress.error = Some(format!("Build failed: {}", error_msg));
-            let _ = window.emit("install-progress", &progress);
-            return Err("Build failed".to_string());
-        }
-        Err(e) => {
-            progress.error = Some(format!("Failed to run cargo: {}", e));
-            let _ = window.emit("install-progress", &progress);
-            return Err("Failed to run cargo".to_string());
+
+    // Get the bundled binary from Tauri sidecar/external bin
+    // Tauri places external binaries in MacOS directory alongside the main binary
+    let app_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Try multiple possible locations for the bundled binary
+    let possible_binary_paths = vec![
+        // Tauri external bin location (in MacOS folder)
+        app_dir.join("carbide-provider"),
+        // Alternative sidecar location
+        app_dir.join("../Resources/carbide-provider"),
+        // Installed location
+        PathBuf::from("/Applications/Carbide Provider.app/Contents/MacOS/carbide-provider"),
+        // Fallback to system-wide if available
+        PathBuf::from("/usr/local/bin/carbide-provider"),
+    ];
+
+    let mut source_binary = None;
+    for path in possible_binary_paths {
+        if path.exists() {
+            source_binary = Some(path);
+            break;
         }
     }
-    
-    // Step 4: Copy binaries
+
+    let source_binary = match source_binary {
+        Some(path) => path,
+        None => {
+            // If bundled binary not found, try to find it in the build directory
+            // This is for development mode
+            let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
+
+            let dev_binary = project_root.join("target").join("release").join("carbide-provider");
+            if dev_binary.exists() {
+                dev_binary
+            } else {
+                progress.error = Some("Carbide provider binary not found. Please ensure the app is properly built.".to_string());
+                let _ = window.emit("install-progress", &progress);
+                return Err("Binary not found".to_string());
+            }
+        }
+    };
+
+    // Step 3: Copy binary to installation directory
     progress.step = "Installing binaries".to_string();
-    progress.progress = 70;
-    progress.message = "Installing Carbide binaries...".to_string();
+    progress.progress = 60;
+    progress.message = "Copying Carbide provider to installation directory...".to_string();
     let _ = window.emit("install-progress", &progress);
-    
-    let source_binary = project_root.join("target").join("release").join("carbide-provider");
+
     let dest_binary = carbide_home.join("bin").join("carbide-provider");
     
     if let Err(e) = fs::copy(&source_binary, &dest_binary).await {
@@ -148,9 +144,9 @@ pub async fn install_carbide(
             .map_err(|e| format!("Failed to set binary permissions: {}", e))?;
     }
     
-    // Step 5: Generate configuration
+    // Step 4: Generate configuration
     progress.step = "Configuring provider".to_string();
-    progress.progress = 80;
+    progress.progress = 75;
     progress.message = "Generating provider configuration...".to_string();
     let _ = window.emit("install-progress", &progress);
     
@@ -168,9 +164,9 @@ pub async fn install_carbide(
         return Err("Failed to save config".to_string());
     }
     
-    // Step 6: Setup auto-start (macOS)
+    // Step 5: Setup auto-start (macOS)
     progress.step = "Setting up auto-start".to_string();
-    progress.progress = 90;
+    progress.progress = 85;
     progress.message = "Configuring auto-start service...".to_string();
     let _ = window.emit("install-progress", &progress);
     
