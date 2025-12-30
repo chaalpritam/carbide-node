@@ -55,9 +55,18 @@ Your Carbide Network storage provider now has a **stunning desktop application**
 # Install to Applications
 cp -r "gui/src-tauri/target/release/bundle/macos/Carbide Provider.app" /Applications/
 
+# Remove macOS quarantine flag (prevents "app is damaged" error)
+sudo xattr -cr "/Applications/Carbide Provider.app"
+
 # Launch
 open "/Applications/Carbide Provider.app"
 ```
+
+**⚠️ macOS Security Note**: If you see "Carbide Provider is damaged", this is macOS Gatekeeper blocking unsigned apps. The app is NOT damaged - just run:
+```bash
+sudo xattr -cr "/Applications/Carbide Provider.app"
+```
+Or right-click the app and select "Open" to bypass. See INSTALL.md for more solutions.
 
 ### **Option 2: Development Mode**
 ```bash

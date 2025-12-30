@@ -189,6 +189,58 @@ curl http://localhost:8080/api/v1/provider/status
    lsof -i :8080
    ```
 
+### macOS "App is Damaged" Error (Gatekeeper Issue)
+
+**Problem**: When installing the DMG or .app bundle, macOS shows "Carbide Provider is damaged and can't be opened. You should move it to the Trash."
+
+**Cause**: This is a macOS Gatekeeper security feature blocking unsigned applications. The app isn't actually damaged - it's just not code-signed with an Apple Developer certificate.
+
+**Solution Options**:
+
+#### Option 1: Remove Quarantine Flag (Recommended)
+```bash
+# If using the DMG installer
+sudo xattr -cr "/Applications/Carbide Provider.app"
+
+# If the app is in a different location
+sudo xattr -cr "/path/to/Carbide Provider.app"
+
+# Now try opening the app again
+open "/Applications/Carbide Provider.app"
+```
+
+#### Option 2: Bypass Gatekeeper Temporarily
+```bash
+# Remove quarantine and allow the app to run
+sudo spctl --master-disable  # Disable Gatekeeper temporarily
+open "/Applications/Carbide Provider.app"
+# After opening once, re-enable Gatekeeper:
+sudo spctl --master-enable
+```
+
+#### Option 3: Right-Click Method
+1. Locate "Carbide Provider.app" in Applications
+2. **Right-click** (or Control-click) on the app
+3. Select **"Open"** from the context menu
+4. Click **"Open"** again in the security dialog
+5. macOS will remember this and allow future launches
+
+#### Option 4: System Settings (macOS Ventura 13+)
+1. Try to open the app (it will be blocked)
+2. Go to **System Settings** > **Privacy & Security**
+3. Scroll down to **Security** section
+4. Click **"Open Anyway"** next to the Carbide Provider message
+5. Confirm by entering your password
+
+#### Option 5: Build from Source (Most Secure)
+```bash
+# Building from source avoids all Gatekeeper issues
+cargo build --release
+# The locally built binary is automatically trusted
+```
+
+**After Using Any Solution**: The app should launch successfully. For production use, we recommend building from source or waiting for a code-signed release.
+
 ### Low Storage Utilization
 
 1. **Check network connectivity**

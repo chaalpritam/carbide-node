@@ -61,10 +61,21 @@ if [ -d "src-tauri/target/release/bundle/macos" ]; then
     if [ -n "$APP_BUNDLE" ]; then
         APP_NAME=$(basename "$APP_BUNDLE")
         echo -e "🎉 Built: ${YELLOW}$APP_NAME${NC}"
+
+        # Remove quarantine flag to prevent "app is damaged" error
+        echo -e "${BLUE}🔓 Removing macOS quarantine flag${NC}"
+        xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+
         echo ""
         echo "📋 Next steps:"
         echo "1. Install: cp -r \"$APP_BUNDLE\" /Applications/"
-        echo "2. Launch from Applications or run: open \"/Applications/$APP_NAME\""
+        echo "2. Remove quarantine (if needed): sudo xattr -cr \"/Applications/$APP_NAME\""
+        echo "3. Launch from Applications or run: open \"/Applications/$APP_NAME\""
+        echo ""
+        echo -e "${YELLOW}⚠️  macOS Security Note:${NC}"
+        echo "If you see 'app is damaged' error, this is macOS Gatekeeper blocking unsigned apps."
+        echo "The app is NOT damaged - just run: sudo xattr -cr \"/Applications/$APP_NAME\""
+        echo "Or right-click the app and select 'Open' to bypass."
         echo ""
         echo "🚀 Your Carbide Provider desktop app is ready!"
     fi
