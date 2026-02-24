@@ -30,8 +30,10 @@
 pub mod content_hash;
 pub mod encryption;
 pub mod proofs;
+pub mod signing;
 
 // Re-exports for convenience
 pub use content_hash::*;
 pub use encryption::*;
 pub use proofs::*;
+pub use signing::*;
