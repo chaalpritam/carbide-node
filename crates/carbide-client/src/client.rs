@@ -238,12 +238,15 @@ impl CarbideClient {
         }
 
         // Create multipart form
+        let file_part = reqwest::multipart::Part::bytes(file_data.to_vec())
+            .file_name("upload")
+            .mime_str("application/octet-stream")
+            .map_err(|e| CarbideError::Internal(format!("Invalid MIME type: {}", e)))?;
+
         let form = reqwest::multipart::Form::new()
             .text("file_id", file_id.to_hex())
             .text("token", upload_token.to_string())
-            .part("file", reqwest::multipart::Part::bytes(file_data.to_vec())
-                .file_name("upload")
-                .mime_str("application/octet-stream").unwrap());
+            .part("file", file_part);
 
         let response = self.client
             .post(upload_url)

@@ -211,15 +211,9 @@ impl DiscoveryService {
     
     /// Create HTTP router for the service
     fn create_router(self: Arc<Self>) -> axum::Router {
-        use axum::{
-            extract::{Path, Query, State},
-            http::StatusCode,
-            response::Json,
-            routing::{get, post, delete},
-            Router,
-        };
-        
-        Router::new()
+        use axum::routing::{get, post, delete};
+
+        axum::Router::new()
             // Provider management
             .route("/api/v1/providers", post(register_provider))
             .route("/api/v1/providers", get(list_providers))
@@ -596,10 +590,16 @@ async fn request_quotes(
     let providers = service.search_providers(&provider_request).await;
     
     // Request quotes from each provider
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .unwrap();
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to create HTTP client for quotes: {}", e);
+            return Json(quotes);
+        }
+    };
     
     let mut quote_tasks = Vec::new();
     
