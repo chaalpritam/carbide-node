@@ -35,9 +35,6 @@ config = { workspace = true }
 toml = "0.8"
 gethostname = "0.4"
 
-# Database and storage
-sqlx = { workspace = true }
-
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }

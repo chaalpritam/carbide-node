@@ -2,16 +2,17 @@
 # Define all the crates that are part of this workspace
 members = [
     "crates/carbide-core",
-    "crates/carbide-provider", 
+    "crates/carbide-provider",
     "crates/carbide-discovery",
     "crates/carbide-client",
     "crates/carbide-reputation",
     "crates/carbide-crypto",
-    "demo"
 ]
-# Exclude the Tauri GUI from the workspace since it's a separate project
+# Exclude the Tauri GUI and demo from the workspace
+# Demo is a standalone example, not part of the production build
 exclude = [
-    "gui/src-tauri"
+    "gui/src-tauri",
+    "demo",
 ]
 # Use the modern resolver for edition 2021
 resolver = "2"
