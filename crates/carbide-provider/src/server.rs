@@ -16,11 +16,12 @@ use axum::{
     Router,
 };
 use carbide_core::{network::*, *};
+use carbide_crypto::ProviderKeyPair;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
-use tracing::info;
+use tracing::{info, warn};
 
 /// Provider server configuration
 #[derive(Debug, Clone)]
@@ -64,6 +65,12 @@ pub struct ProviderServer {
     stats: Arc<tokio::sync::RwLock<StorageStats>>,
     /// Storage directory path
     storage_dir: PathBuf,
+    /// Discovery service endpoint for registration and heartbeats
+    discovery_endpoint: Option<String>,
+    /// Ed25519 key pair for proof signing and identity
+    key_pair: Option<Arc<ProviderKeyPair>>,
+    /// Heartbeat interval in seconds
+    heartbeat_interval_secs: u64,
 }
 
 /// Information about a stored file
@@ -106,7 +113,14 @@ pub struct StorageStats {
 
 impl ProviderServer {
     /// Create a new provider server
-    pub fn new(config: ServerConfig, provider: Provider, storage_path: PathBuf) -> Result<Self> {
+    pub fn new(
+        config: ServerConfig,
+        provider: Provider,
+        storage_path: PathBuf,
+        discovery_endpoint: Option<String>,
+        key_pair: Option<Arc<ProviderKeyPair>>,
+        heartbeat_interval_secs: u64,
+    ) -> Result<Self> {
         let storage_dir = storage_path.join(provider.id.to_string());
 
         // Create storage directory if it doesn't exist
@@ -134,6 +148,9 @@ impl ProviderServer {
             contracts: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             stats: Arc::new(tokio::sync::RwLock::new(stats)),
             storage_dir,
+            discovery_endpoint,
+            key_pair,
+            heartbeat_interval_secs,
         })
     }
 
@@ -192,6 +209,24 @@ impl ProviderServer {
             self.provider.available_capacity as f64 / (1024.0 * 1024.0 * 1024.0)
         );
 
+        // Clone data needed for the registration loop before moving self
+        let discovery_endpoint = self.discovery_endpoint.clone();
+        let provider = self.provider.clone();
+        let stats = Arc::clone(&self.stats);
+        let key_pair = self.key_pair.clone();
+        let heartbeat_interval = self.heartbeat_interval_secs;
+
+        // Spawn registration & heartbeat loop if discovery is configured
+        if let Some(endpoint) = discovery_endpoint {
+            tokio::spawn(registration_loop(
+                endpoint,
+                provider,
+                stats,
+                key_pair,
+                heartbeat_interval,
+            ));
+        }
+
         // Create the router with all endpoints
         let app = self.create_router();
 
@@ -242,6 +277,113 @@ impl ProviderServer {
                         CorsLayer::new()
                     }),
             )
+    }
+}
+
+// ============================================================================
+// Registration & Heartbeat Loop
+// ============================================================================
+
+/// Background task that registers with discovery and sends periodic heartbeats
+async fn registration_loop(
+    discovery_endpoint: String,
+    provider: Provider,
+    stats: Arc<tokio::sync::RwLock<StorageStats>>,
+    key_pair: Option<Arc<ProviderKeyPair>>,
+    heartbeat_interval_secs: u64,
+) {
+    let http_client = reqwest::Client::new();
+    let register_url = format!("{}/api/v1/providers", discovery_endpoint);
+    let heartbeat_url = format!(
+        "{}/api/v1/providers/{}/heartbeat",
+        discovery_endpoint, provider.id
+    );
+
+    // Phase 1: Register with exponential backoff
+    let mut backoff = Duration::from_secs(1);
+    let max_backoff = Duration::from_secs(60);
+
+    loop {
+        let public_key = key_pair.as_ref().map(|kp| kp.public_key_hex());
+        let announcement = ProviderAnnouncement {
+            provider: provider.clone(),
+            endpoint: provider.endpoint.clone(),
+            supported_versions: vec!["1.0.0".to_string()],
+            public_key,
+        };
+
+        match http_client
+            .post(&register_url)
+            .json(&announcement)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                info!(
+                    "Registered with discovery service at {}",
+                    discovery_endpoint
+                );
+                break;
+            }
+            Ok(resp) => {
+                warn!(
+                    "Discovery registration returned {}, retrying in {:?}",
+                    resp.status(),
+                    backoff
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Discovery registration failed: {}, retrying in {:?}",
+                    e, backoff
+                );
+            }
+        }
+
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(max_backoff);
+    }
+
+    // Phase 2: Periodic heartbeats
+    let mut interval = tokio::time::interval(Duration::from_secs(heartbeat_interval_secs));
+    loop {
+        interval.tick().await;
+
+        let current_stats = stats.read().await;
+        let load = if current_stats.total_capacity > 0 {
+            (current_stats.total_bytes_stored as f64 / current_stats.total_capacity as f64) as f32
+        } else {
+            0.0
+        };
+
+        let health = HealthCheckResponse {
+            status: ServiceStatus::Healthy,
+            timestamp: Utc::now(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            available_storage: Some(current_stats.available_space),
+            load: Some(load),
+            reputation: Some(provider.reputation.overall),
+        };
+        drop(current_stats);
+
+        match http_client
+            .post(&heartbeat_url)
+            .json(&health)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                tracing::debug!("Heartbeat sent to discovery");
+            }
+            Ok(resp) => {
+                warn!("Heartbeat returned {}", resp.status());
+            }
+            Err(e) => {
+                warn!("Heartbeat failed: {}", e);
+            }
+        }
     }
 }
 
@@ -447,6 +589,23 @@ async fn upload_file(
         file_data.len()
     );
 
+    // Fire-and-forget: notify discovery about file-provider mapping
+    if let Some(ref endpoint) = server.discovery_endpoint {
+        let url = format!("{}/api/v1/files/{}/providers", endpoint, file_id.to_hex());
+        let provider_id = server.provider.id.to_string();
+        let file_size = file_data.len() as u64;
+        let http_client = reqwest::Client::new();
+        tokio::spawn(async move {
+            let body = serde_json::json!({
+                "provider_id": provider_id,
+                "file_size": file_size,
+            });
+            if let Err(e) = http_client.post(&url).json(&body).send().await {
+                tracing::warn!("Failed to notify discovery of file mapping: {}", e);
+            }
+        });
+    }
+
     Ok(Json(UploadResponse {
         success: true,
         file_id,
@@ -641,11 +800,18 @@ async fn proof_challenge(
             );
             let response_hash = ContentHash::from_data(response_data.as_bytes());
 
+            // Sign the response hash with provider's Ed25519 key pair
+            let signature = if let Some(ref kp) = server.key_pair {
+                kp.sign(response_hash.as_bytes())
+            } else {
+                vec![0u8; 64] // No key pair configured — unsigned proof
+            };
+
             let response = StorageProofData {
                 challenge_id: challenge.challenge_id.clone(),
                 merkle_proofs,
                 response_hash,
-                signature: vec![0u8; 64], // TODO: Real signature with provider private key
+                signature,
                 generated_at: Utc::now(),
             };
 
@@ -769,7 +935,7 @@ mod tests {
         );
 
         let storage_path = PathBuf::from("./test_storage");
-        let server = ProviderServer::new(config, provider.clone(), storage_path).unwrap();
+        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60).unwrap();
 
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);
