@@ -115,11 +115,42 @@ async fn main() -> Result<()> {
             println!("   Capacity: {}", capacity);
             println!("   Tier: {}", tier);
             println!("   Region: {}", region);
-            
-            // TODO: Create storage directory, generate provider config
-            // TODO: Save configuration to disk
-            
+
+            // Parse capacity string (e.g. "25GB", "1TB")
+            let max_storage_gb = parse_capacity(&capacity)?;
+
+            // Create storage directory
+            let storage = PathBuf::from(&storage_path);
+            tokio::fs::create_dir_all(&storage)
+                .await
+                .with_context(|| format!("Failed to create storage directory: {}", storage_path))?;
+
+            // Build default config with user-provided values
+            let mut config = ProviderConfig::default();
+            config.provider.storage_path = storage;
+            config.provider.max_storage_gb = max_storage_gb;
+            config.provider.tier = tier;
+            config.provider.region = region;
+
+            // Determine config file location
+            let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            let config_dir = PathBuf::from(&home_dir).join(".carbide/config");
+            tokio::fs::create_dir_all(&config_dir)
+                .await
+                .with_context(|| "Failed to create config directory")?;
+
+            let config_path = config_dir.join("provider.toml");
+            config.save_to_file(&config_path)
+                .await
+                .with_context(|| "Failed to save provider configuration")?;
+
             println!("✅ Provider initialized successfully!");
+            println!("   Config saved to: {}", config_path.display());
+            println!("   Storage directory: {}", storage_path);
+            println!("   Capacity: {}GB", max_storage_gb);
+            println!();
+            println!("💡 Start the provider with:");
+            println!("   carbide-provider --config {}", config_path.display());
         }
         Command::Start {
             name,
@@ -359,5 +390,32 @@ fn parse_region(region: &str) -> anyhow::Result<Region> {
         "africa" => Ok(Region::Africa),
         "oceania" => Ok(Region::Oceania),
         _ => Err(anyhow::anyhow!("Invalid region: {}. Valid options: northamerica, europe, asia, southamerica, africa, oceania", region)),
+    }
+}
+
+/// Parse capacity string like "25GB", "1TB", "500MB" into GB
+fn parse_capacity(capacity: &str) -> anyhow::Result<u64> {
+    let capacity = capacity.trim().to_uppercase();
+
+    if let Some(num) = capacity.strip_suffix("TB") {
+        let val: u64 = num.trim().parse()
+            .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
+        Ok(val * 1024)
+    } else if let Some(num) = capacity.strip_suffix("GB") {
+        let val: u64 = num.trim().parse()
+            .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
+        Ok(val)
+    } else if let Some(num) = capacity.strip_suffix("MB") {
+        let val: u64 = num.trim().parse()
+            .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
+        if val < 1024 {
+            anyhow::bail!("Minimum capacity is 1GB (1024MB), got {}MB", val);
+        }
+        Ok(val / 1024)
+    } else {
+        // Assume GB if no suffix
+        let val: u64 = capacity.parse()
+            .map_err(|_| anyhow::anyhow!("Invalid capacity: {}. Use format like '25GB', '1TB'", capacity))?;
+        Ok(val)
     }
 }
