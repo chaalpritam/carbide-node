@@ -3,10 +3,11 @@
 //! The storage provider binary that allows anyone to earn money by contributing
 //! storage capacity to the Carbide Network.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use carbide_core::{Provider, ProviderTier, Region};
+use carbide_crypto::ProviderKeyPair;
 use carbide_provider::{ProviderConfig, ProviderServer, ServerConfig};
 use clap::Parser;
 use rust_decimal::Decimal;
@@ -200,9 +201,9 @@ async fn main() -> Result<()> {
                 enable_cors: true,
             };
 
-            // Create and start the server
+            // Create and start the server (no discovery or key pair in quick-start mode)
             let storage_path = PathBuf::from("./storage");
-            let server = ProviderServer::new(config, provider, storage_path)?;
+            let server = ProviderServer::new(config, provider, storage_path, None, None, 60)?;
 
             // Start server in background task
             let server_handle = tokio::spawn(async move {
@@ -317,6 +318,29 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         price,
     );
 
+    // Load or generate provider Ed25519 key pair
+    let key_path = config
+        .provider
+        .storage_path
+        .join("keys/provider.key.json");
+    let key_pair = match ProviderKeyPair::load_or_generate(&key_path) {
+        Ok(kp) => {
+            println!("🔑 Provider public key: {}", kp.public_key_hex());
+            Some(Arc::new(kp))
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to load/generate key pair: {e}. Running without signing.");
+            None
+        }
+    };
+
+    // Determine discovery endpoint (non-empty string means enabled)
+    let discovery_endpoint = if config.network.discovery_endpoint.is_empty() {
+        None
+    } else {
+        Some(config.network.discovery_endpoint.clone())
+    };
+
     // Create server configuration
     let server_config = ServerConfig {
         host: "0.0.0.0".to_string(),
@@ -331,33 +355,17 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         server_config,
         provider,
         config.provider.storage_path.clone(),
+        discovery_endpoint,
+        key_pair,
+        config.network.heartbeat_interval_secs,
     )?;
 
-    // Start server in background task
+    // Start server in background task (registration_loop is spawned inside start())
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server.start().await {
             eprintln!("❌ Server error: {}", e);
         }
     });
-
-    // Health check reporting task (if enabled)
-    let health_check_handle = if config.reputation.enable_reporting {
-        let provider_name = config.provider.name.clone();
-        let interval = Duration::from_secs(config.reputation.health_check_interval);
-
-        Some(tokio::spawn(async move {
-            let mut interval_timer = tokio::time::interval(interval);
-            loop {
-                interval_timer.tick().await;
-
-                // Report health status to discovery service
-                // In a real implementation, this would send actual metrics
-                tracing::info!("Health check: Provider '{}' is healthy", provider_name);
-            }
-        }))
-    } else {
-        None
-    };
 
     println!("✅ Provider started successfully!");
     println!("🌐 Listening on: http://localhost:{}", config.provider.port);
@@ -381,11 +389,6 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         _ = server_handle => {
             println!("🛑 Server stopped unexpectedly");
         }
-    }
-
-    // Clean shutdown
-    if let Some(health_handle) = health_check_handle {
-        health_handle.abort();
     }
 
     println!("✅ Provider shut down gracefully");
