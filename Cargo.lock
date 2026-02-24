@@ -562,6 +562,8 @@ dependencies = [
  "hex",
  "ring 0.17.14",
  "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio-test",
  "tracing",
