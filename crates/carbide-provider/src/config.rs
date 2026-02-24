@@ -1,4 +1,9 @@
 //! Provider configuration management
+//!
+//! Configuration is resolved with the following priority (highest first):
+//! 1. Environment variables (CARBIDE_*)
+//! 2. TOML config file
+//! 3. Built-in defaults
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -73,7 +78,7 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         let carbide_home = PathBuf::from(&home_dir).join(".carbide");
-        
+
         Self {
             provider: ProviderSection {
                 name: format!("{}-carbide-provider", gethostname::gethostname().to_string_lossy()),
@@ -109,17 +114,111 @@ impl ProviderConfig {
         let config: ProviderConfig = toml::from_str(&content)?;
         Ok(config)
     }
-    
+
+    /// Load configuration from TOML file, then apply environment variable overrides.
+    ///
+    /// Supported environment variables:
+    /// - `CARBIDE_PROVIDER_NAME` - Provider display name
+    /// - `CARBIDE_PROVIDER_PORT` - Port to listen on
+    /// - `CARBIDE_PROVIDER_TIER` - Provider tier
+    /// - `CARBIDE_PROVIDER_REGION` - Geographic region
+    /// - `CARBIDE_STORAGE_PATH` - Storage directory path
+    /// - `CARBIDE_MAX_STORAGE_GB` - Maximum storage in GB
+    /// - `CARBIDE_DISCOVERY_ENDPOINT` - Discovery service URL
+    /// - `CARBIDE_ADVERTISE_ADDRESS` - Address advertised to clients
+    /// - `CARBIDE_PRICE_PER_GB` - Price per GB per month (USD)
+    /// - `CARBIDE_LOG_LEVEL` - Log level (debug, info, warn, error)
+    /// - `CARBIDE_LOG_FILE` - Log file path
+    pub async fn load(path: &PathBuf) -> anyhow::Result<Self> {
+        let mut config = Self::load_from_file(path).await?;
+        config.apply_env_overrides();
+        Ok(config)
+    }
+
+    /// Apply environment variable overrides to the current config.
+    pub fn apply_env_overrides(&mut self) {
+        if let Ok(v) = std::env::var("CARBIDE_PROVIDER_NAME") {
+            self.provider.name = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_PROVIDER_PORT") {
+            if let Ok(port) = v.parse::<u16>() {
+                self.provider.port = port;
+            }
+        }
+        if let Ok(v) = std::env::var("CARBIDE_PROVIDER_TIER") {
+            self.provider.tier = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_PROVIDER_REGION") {
+            self.provider.region = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_STORAGE_PATH") {
+            self.provider.storage_path = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("CARBIDE_MAX_STORAGE_GB") {
+            if let Ok(gb) = v.parse::<u64>() {
+                self.provider.max_storage_gb = gb;
+            }
+        }
+        if let Ok(v) = std::env::var("CARBIDE_DISCOVERY_ENDPOINT") {
+            self.network.discovery_endpoint = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_ADVERTISE_ADDRESS") {
+            self.network.advertise_address = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_PRICE_PER_GB") {
+            if let Ok(price) = v.parse::<f64>() {
+                self.pricing.price_per_gb_month = price;
+            }
+        }
+        if let Ok(v) = std::env::var("CARBIDE_LOG_LEVEL") {
+            self.logging.level = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_LOG_FILE") {
+            self.logging.file = PathBuf::from(v);
+        }
+    }
+
     /// Save configuration to TOML file
     pub async fn save_to_file(&self, path: &PathBuf) -> anyhow::Result<()> {
         let content = toml::to_string_pretty(self)?;
-        
+
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        
+
         tokio::fs::write(path, content).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = ProviderConfig::default();
+        assert_eq!(config.provider.port, 8080);
+        assert_eq!(config.provider.max_storage_gb, 25);
+        assert_eq!(config.pricing.price_per_gb_month, 0.005);
+        assert_eq!(config.logging.level, "info");
+    }
+
+    #[test]
+    fn test_env_override() {
+        // Set env vars for the test
+        std::env::set_var("CARBIDE_PROVIDER_PORT", "9999");
+        std::env::set_var("CARBIDE_LOG_LEVEL", "debug");
+
+        let mut config = ProviderConfig::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.provider.port, 9999);
+        assert_eq!(config.logging.level, "debug");
+
+        // Clean up
+        std::env::remove_var("CARBIDE_PROVIDER_PORT");
+        std::env::remove_var("CARBIDE_LOG_LEVEL");
     }
 }

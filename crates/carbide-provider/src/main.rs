@@ -261,8 +261,8 @@ async fn main() -> Result<()> {
 async fn run_with_config(config_path: &PathBuf) -> Result<()> {
     println!("🔧 Loading configuration from: {}", config_path.display());
     
-    // Load configuration
-    let config = ProviderConfig::load_from_file(config_path)
+    // Load configuration with env var overrides
+    let config = ProviderConfig::load(config_path)
         .await
         .with_context(|| format!("Failed to load config from: {}", config_path.display()))?;
     
