@@ -25,9 +25,13 @@ aes-gcm = { workspace = true }
 # Hex encoding
 hex = "0.4"
 
+# Serialization (for key pair persistence)
+serde_json = { workspace = true }
+
 # Utilities
 tracing = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
 hex = "0.4"
+tempfile = "3.8"
