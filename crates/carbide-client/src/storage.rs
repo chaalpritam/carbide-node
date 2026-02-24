@@ -9,6 +9,7 @@ use carbide_core::{
     network::*, CarbideError, ContentHash, FileId, Provider, ProviderRequirements, ProviderTier,
     Region, Result,
 };
+use carbide_crypto::{EncryptedData, FileDecryptor, FileEncryptor, KeyManager};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
@@ -24,6 +25,8 @@ pub struct StorageManager {
     discovery_endpoint: String,
     /// Default storage preferences
     preferences: StoragePreferences,
+    /// Optional key manager for client-side encryption
+    key_manager: Option<KeyManager>,
 }
 
 /// Storage preferences for automatic provider selection
@@ -66,6 +69,8 @@ pub struct StoreResult {
     pub total_monthly_cost: rust_decimal::Decimal,
     /// Storage duration in months
     pub duration_months: u32,
+    /// Whether the file was encrypted before storing
+    pub is_encrypted: bool,
 }
 
 /// Information about where a file is stored
@@ -121,6 +126,7 @@ impl StorageManager {
             client,
             discovery_endpoint,
             preferences: StoragePreferences::default(),
+            key_manager: None,
         }
     }
 
@@ -134,6 +140,21 @@ impl StorageManager {
             client,
             discovery_endpoint,
             preferences,
+            key_manager: None,
+        }
+    }
+
+    /// Create storage manager with client-side encryption enabled
+    pub fn with_encryption(
+        client: CarbideClient,
+        discovery_endpoint: String,
+        key_manager: KeyManager,
+    ) -> Self {
+        Self {
+            client,
+            discovery_endpoint,
+            preferences: StoragePreferences::default(),
+            key_manager: Some(key_manager),
         }
     }
 
@@ -146,19 +167,42 @@ impl StorageManager {
     ) -> Result<StoreResult> {
         let file_id = ContentHash::from_data(data);
 
+        // Encrypt data if key manager is configured
+        let (upload_data, encryption_info, is_encrypted) = if let Some(ref km) = self.key_manager {
+            let file_key = km.derive_file_key(&file_id.to_hex())?;
+            let encryptor = FileEncryptor::new(&file_key)?;
+            let encrypted = encryptor.encrypt(data)?;
+            let encrypted_bytes = serde_json::to_vec(&encrypted).map_err(|e| {
+                CarbideError::Internal(format!("Failed to serialize encrypted data: {e}"))
+            })?;
+            let enc_info = Some(EncryptionInfo {
+                algorithm: "AES-256-GCM".to_string(),
+                key_derivation: Some(KeyDerivationInfo {
+                    method: "HKDF-SHA256".to_string(),
+                    salt: String::new(),
+                    iterations: 0,
+                }),
+                is_encrypted: true,
+            });
+            info!("Encrypted file {} ({} bytes -> {} bytes)", file_id, data.len(), encrypted_bytes.len());
+            (encrypted_bytes, enc_info, true)
+        } else {
+            (data.to_vec(), None, false)
+        };
+
         if let Some(cb) = &progress_callback {
             cb(StorageProgress {
                 operation: "Discovering providers".to_string(),
                 progress: 0.1,
                 message: "Finding suitable storage providers...".to_string(),
                 bytes_transferred: 0,
-                total_bytes: data.len() as u64,
+                total_bytes: upload_data.len() as u64,
             });
         }
 
         // 1. Discover suitable providers
         let providers = self
-            .discover_providers(data.len() as u64, duration_months)
+            .discover_providers(upload_data.len() as u64, duration_months)
             .await?;
 
         if providers.is_empty() {
@@ -189,9 +233,9 @@ impl StorageManager {
         for (i, provider) in providers.iter().take(target_replicas).enumerate() {
             let store_request = StoreFileRequest {
                 file_id,
-                file_size: data.len() as u64,
+                file_size: upload_data.len() as u64,
                 duration_months,
-                encryption_info: None, // TODO: Add encryption support
+                encryption_info: encryption_info.clone(),
                 requirements: self.preferences.requirements.clone(),
                 max_price: self.preferences.max_price_per_gb,
             };
@@ -217,7 +261,7 @@ impl StorageManager {
 
                             if let Some(contract) = &contract {
                                 let monthly_cost = contract.price_per_gb_month
-                                    * rust_decimal::Decimal::new(data.len() as i64, 9) // bytes to GB
+                                    * rust_decimal::Decimal::new(upload_data.len() as i64, 9) // bytes to GB
                                     * rust_decimal::Decimal::new(i64::from(duration_months), 0);
                                 total_cost += monthly_cost;
                             }
@@ -240,7 +284,7 @@ impl StorageManager {
                     progress: 0.2 + (0.3 * (i + 1) as f32 / target_replicas as f32),
                     message: format!("Requested storage from {} providers", i + 1),
                     bytes_transferred: 0,
-                    total_bytes: data.len() as u64,
+                    total_bytes: upload_data.len() as u64,
                 });
             }
         }
@@ -259,13 +303,13 @@ impl StorageManager {
                     progress: 0.5 + (0.4 * i as f32 / storage_locations.len() as f32),
                     message: format!("Uploading to {}...", location.provider.name),
                     bytes_transferred: 0,
-                    total_bytes: data.len() as u64,
+                    total_bytes: upload_data.len() as u64,
                 });
             }
 
             match self
                 .client
-                .upload_file(&location.upload_url, &file_id, data, &location.upload_token)
+                .upload_file(&location.upload_url, &file_id, &upload_data, &location.upload_token)
                 .await
             {
                 Ok(_) => {
@@ -282,8 +326,8 @@ impl StorageManager {
                     operation: "Uploading files".to_string(),
                     progress: 0.5 + (0.4 * (i + 1) as f32 / storage_locations.len() as f32),
                     message: format!("Uploaded to {} providers", i + 1),
-                    bytes_transferred: data.len() as u64,
-                    total_bytes: data.len() as u64,
+                    bytes_transferred: upload_data.len() as u64,
+                    total_bytes: upload_data.len() as u64,
                 });
             }
         }
@@ -293,11 +337,29 @@ impl StorageManager {
                 operation: "Complete".to_string(),
                 progress: 1.0,
                 message: format!(
-                    "File stored successfully with {} replicas",
-                    storage_locations.len()
+                    "File stored successfully with {} replicas{}",
+                    storage_locations.len(),
+                    if is_encrypted { " (encrypted)" } else { "" }
                 ),
-                bytes_transferred: data.len() as u64,
-                total_bytes: data.len() as u64,
+                bytes_transferred: upload_data.len() as u64,
+                total_bytes: upload_data.len() as u64,
+            });
+        }
+
+        // Notify discovery about file-provider mappings (fire-and-forget)
+        for location in &storage_locations {
+            let url = format!(
+                "{}/api/v1/files/{}/providers",
+                self.discovery_endpoint,
+                file_id.to_hex()
+            );
+            let body = serde_json::json!({
+                "provider_id": location.provider.id.to_string(),
+                "file_size": upload_data.len() as u64,
+            });
+            let http = self.client.http_client().clone();
+            tokio::spawn(async move {
+                let _ = http.post(&url).json(&body).send().await;
             });
         }
 
@@ -307,6 +369,7 @@ impl StorageManager {
             providers: storage_locations,
             total_monthly_cost: total_cost,
             duration_months,
+            is_encrypted,
         })
     }
 
@@ -327,19 +390,14 @@ impl StorageManager {
             });
         }
 
-        // TODO: Implement provider lookup for files
-        // For now, try a few known providers
-        let test_providers = [
-            "http://localhost:8080".to_string(),
-            "http://localhost:8081".to_string(),
-            "http://localhost:8082".to_string(),
-        ];
+        // Look up providers via discovery service file-provider mapping
+        let provider_endpoints = self.lookup_file_providers(file_id).await;
 
-        for (i, provider_endpoint) in test_providers.iter().enumerate() {
+        for (i, provider_endpoint) in provider_endpoints.iter().enumerate() {
             if let Some(cb) = &progress_callback {
                 cb(StorageProgress {
                     operation: "Searching providers".to_string(),
-                    progress: 0.2 + (0.3 * i as f32 / test_providers.len() as f32),
+                    progress: 0.2 + (0.3 * i as f32 / provider_endpoints.len() as f32),
                     message: format!("Checking provider {}...", i + 1),
                     bytes_transferred: 0,
                     total_bytes: 0,
@@ -366,7 +424,10 @@ impl StorageManager {
 
                         // Download the actual file data
                         match self.client.download_file(&download_url).await {
-                            Ok(data) => {
+                            Ok(raw_data) => {
+                                // Decrypt if key manager is available
+                                let data = self.maybe_decrypt(file_id, raw_data)?;
+
                                 if let Some(cb) = &progress_callback {
                                     cb(StorageProgress {
                                         operation: "Complete".to_string(),
@@ -377,7 +438,6 @@ impl StorageManager {
                                     });
                                 }
 
-                                // Create a mock provider for now
                                 let provider = Provider::new(
                                     "Retrieved Provider".to_string(),
                                     carbide_core::ProviderTier::Professional,
@@ -399,8 +459,10 @@ impl StorageManager {
                                 warn!("Failed to download from {}: {}", provider_endpoint, e);
                             }
                         }
-                    } else if let Some(data) = retrieve_response.data {
-                        // File data was included directly
+                    } else if let Some(raw_data) = retrieve_response.data {
+                        // File data was included directly — decrypt if needed
+                        let data = self.maybe_decrypt(file_id, raw_data)?;
+
                         if let Some(cb) = &progress_callback {
                             cb(StorageProgress {
                                 operation: "Complete".to_string(),
@@ -438,6 +500,74 @@ impl StorageManager {
         Err(CarbideError::Internal(format!(
             "File {file_id} not found on any provider"
         )))
+    }
+
+    /// Look up providers that hold a file via discovery service, falling back to localhost
+    async fn lookup_file_providers(&self, file_id: &FileId) -> Vec<String> {
+        let url = format!(
+            "{}/api/v1/files/{}/providers",
+            self.discovery_endpoint,
+            file_id.to_hex()
+        );
+
+        match self
+            .client
+            .http_client()
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                #[derive(Deserialize)]
+                struct FileProviderEntry {
+                    endpoint: String,
+                }
+                #[derive(Deserialize)]
+                struct FileProvidersResponse {
+                    providers: Vec<FileProviderEntry>,
+                }
+                if let Ok(body) = resp.json::<FileProvidersResponse>().await {
+                    let endpoints: Vec<String> =
+                        body.providers.into_iter().map(|p| p.endpoint).collect();
+                    if !endpoints.is_empty() {
+                        return endpoints;
+                    }
+                }
+            }
+            _ => {
+                warn!("Discovery file lookup failed, falling back to localhost");
+            }
+        }
+
+        // Fallback to hardcoded test providers for backward compatibility
+        vec![
+            "http://localhost:8080".to_string(),
+            "http://localhost:8081".to_string(),
+            "http://localhost:8082".to_string(),
+        ]
+    }
+
+    /// Decrypt data if key_manager is present, attempting to deserialize as EncryptedData
+    fn maybe_decrypt(&self, file_id: &FileId, raw_data: Vec<u8>) -> Result<Vec<u8>> {
+        if let Some(ref km) = self.key_manager {
+            // Try to deserialize as EncryptedData
+            match serde_json::from_slice::<EncryptedData>(&raw_data) {
+                Ok(encrypted) => {
+                    let file_key = km.derive_file_key(&file_id.to_hex())?;
+                    let decryptor = FileDecryptor::new(&file_key)?;
+                    let plaintext = decryptor.decrypt(&encrypted)?;
+                    info!("Decrypted file {} ({} bytes)", file_id, plaintext.len());
+                    Ok(plaintext)
+                }
+                Err(_) => {
+                    // Data is not encrypted — return as-is
+                    Ok(raw_data)
+                }
+            }
+        } else {
+            Ok(raw_data)
+        }
     }
 
     /// Discover suitable providers for storing a file
