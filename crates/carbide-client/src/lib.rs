@@ -38,3 +38,6 @@ pub use storage::{
     simple, ProgressCallback, RetrieveResult, StorageLocation, StorageManager, StoragePreferences,
     StorageProgress, StoreResult,
 };
+
+// Re-export crypto types for encryption support
+pub use carbide_crypto::{EncryptionKey, KeyManager};
