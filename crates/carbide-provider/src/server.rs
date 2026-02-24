@@ -217,33 +217,35 @@ impl ProviderServer {
     /// Create the router with all API endpoints
     fn create_router(self) -> Router {
         let enable_cors = self.config.enable_cors;
+        let request_timeout = self.config.request_timeout;
+        let max_upload_size = self.config.max_upload_size;
         let server_state = Arc::new(self);
 
         Router::new()
             // Health and status endpoints
             .route(ApiEndpoints::HEALTH_CHECK, get(health_check))
             .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status))
-            
-            // File storage endpoints  
+
+            // File storage endpoints
             .route(ApiEndpoints::FILE_STORE, post(store_file_request))
             .route(ApiEndpoints::FILE_RETRIEVE, get(retrieve_file))
             .route(ApiEndpoints::FILE_DELETE, delete(delete_file))
             .route(ApiEndpoints::FILE_UPLOAD, post(upload_file))
             .route(ApiEndpoints::FILE_DOWNLOAD, get(download_file))
-            
+
             // Marketplace endpoints
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
-            
+
             // Proof of storage endpoints
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
-            
+
             .with_state(server_state)
             .layer(
                 ServiceBuilder::new()
                     .layer(TraceLayer::new_for_http())
-                    .layer(TimeoutLayer::new(Duration::from_secs(30)))
-                    .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 100MB
+                    .layer(TimeoutLayer::new(request_timeout))
+                    .layer(DefaultBodyLimit::max(max_upload_size))
                     .layer(if enable_cors {
                         CorsLayer::permissive()
                     } else {
@@ -264,12 +266,19 @@ async fn health_check(
     let mut stats = server.stats.write().await;
     stats.last_health_check = Utc::now();
     
+    // Calculate actual load from storage utilization
+    let load = if stats.total_capacity > 0 {
+        (stats.total_bytes_stored as f64 / stats.total_capacity as f64) as f32
+    } else {
+        0.0
+    };
+
     let health_response = HealthCheckResponse {
         status: ServiceStatus::Healthy,
         timestamp: Utc::now(),
-        version: "1.0.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         available_storage: Some(stats.available_space),
-        load: Some(0.5), // TODO: Calculate actual load
+        load: Some(load),
         reputation: Some(server.provider.reputation.overall),
     };
 
@@ -326,9 +335,9 @@ async fn store_file_request(
                 // Store the contract
                 server.contracts.write().await.insert(contract.id, contract.clone());
 
-                // Generate upload URL and token
-                let upload_url = format!("http://{}:{}{}", 
-                    server.config.host, server.config.port, ApiEndpoints::FILE_UPLOAD);
+                // Generate upload URL using the provider's public endpoint
+                let upload_url = format!("{}{}",
+                    server.provider.endpoint, ApiEndpoints::FILE_UPLOAD);
                 let upload_token = contract.id.to_string();
 
                 StoreFileResponse {
@@ -462,8 +471,8 @@ async fn retrieve_file(
         let response = RetrieveFileResponse {
             file_id: stored_file.file_id,
             data: None, // For large files, provide download URL instead
-            download_url: Some(format!("http://{}:{}/api/v1/download/{}", 
-                server.config.host, server.config.port, file_id)),
+            download_url: Some(format!("{}/api/v1/download/{}",
+                server.provider.endpoint, file_id)),
             content_type: stored_file.content_type.clone(),
             size: stored_file.size,
             last_modified: stored_file.stored_at,
