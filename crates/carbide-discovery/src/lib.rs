@@ -4,20 +4,37 @@
 //! This service acts as a registry and matchmaker between storage clients
 //! and storage providers.
 
-use carbide_core::{
-    network::*,
-    Provider, ProviderId, Region, ProviderTier, CarbideError,
-};
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::must_use_candidate,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::module_name_repetitions,
+    clippy::wildcard_imports,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::doc_markdown,
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    clippy::unused_async,
+    clippy::return_self_not_must_use,
+    clippy::match_same_arms,
+    clippy::needless_pass_by_value,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    missing_docs
+)]
+
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
+use carbide_core::{network::*, CarbideError, Provider, ProviderId, ProviderTier, Region};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::Duration,
-};
 use tokio::time::interval;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Discovery service configuration
@@ -83,18 +100,18 @@ impl RegistryEntry {
             active_contracts: 0,
         }
     }
-    
+
     /// Check if provider is considered online
     pub fn is_online(&self, timeout: Duration) -> bool {
         let elapsed = Utc::now() - self.last_heartbeat;
         elapsed.num_seconds() < timeout.as_secs() as i64
     }
-    
+
     /// Update health status
     pub fn update_health(&mut self, status: ServiceStatus) {
         self.last_heartbeat = Utc::now();
         self.health_status = status.clone();
-        
+
         if matches!(status, ServiceStatus::Healthy) {
             self.failed_health_checks = 0;
         } else {
@@ -161,7 +178,7 @@ impl DiscoveryService {
             stats: Arc::new(tokio::sync::RwLock::new(MarketplaceStats::default())),
         }
     }
-    
+
     /// Start the discovery service
     pub async fn start(self) -> carbide_core::Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
@@ -169,13 +186,13 @@ impl DiscoveryService {
 
         // Start background tasks
         let service = Arc::new(self);
-        
+
         // Health checker task
         let health_service = service.clone();
         let health_task = tokio::spawn(async move {
             health_service.health_checker_task().await;
         });
-        
+
         // Statistics updater task
         let stats_service = service.clone();
         let stats_task = tokio::spawn(async move {
@@ -184,15 +201,17 @@ impl DiscoveryService {
 
         // Create and start HTTP server
         let app = service.create_router();
-        let listener = tokio::net::TcpListener::bind(&addr).await
-            .map_err(|e| CarbideError::Internal(format!("Failed to bind to {}: {}", addr, e)))?;
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .map_err(|e| CarbideError::Internal(format!("Failed to bind to {addr}: {e}")))?;
 
         info!("✅ Discovery service listening on {}", addr);
-        
+
         // Start server
         let server_task = tokio::spawn(async move {
-            axum::serve(listener, app).await
-                .map_err(|e| CarbideError::Internal(format!("Server error: {}", e)))
+            axum::serve(listener, app)
+                .await
+                .map_err(|e| CarbideError::Internal(format!("Server error: {e}")))
         });
 
         // Wait for any task to complete (or fail)
@@ -205,85 +224,98 @@ impl DiscoveryService {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Create HTTP router for the service
     fn create_router(self: Arc<Self>) -> axum::Router {
-        use axum::routing::{get, post, delete};
+        use axum::routing::{delete, get, post};
 
         axum::Router::new()
             // Provider management
             .route("/api/v1/providers", post(register_provider))
             .route("/api/v1/providers", get(list_providers))
             .route("/api/v1/providers/:provider_id", get(get_provider))
-            .route("/api/v1/providers/:provider_id", delete(unregister_provider))
-            .route("/api/v1/providers/:provider_id/heartbeat", post(provider_heartbeat))
-            
+            .route(
+                "/api/v1/providers/:provider_id",
+                delete(unregister_provider),
+            )
+            .route(
+                "/api/v1/providers/:provider_id/heartbeat",
+                post(provider_heartbeat),
+            )
             // Marketplace and discovery
             .route("/api/v1/marketplace/search", get(search_providers))
             .route("/api/v1/marketplace/quotes", post(request_quotes))
             .route("/api/v1/marketplace/stats", get(marketplace_stats))
-            
             // Health and monitoring
             .route("/api/v1/health", get(discovery_health))
-            
             .with_state(self)
             .layer(
                 tower::ServiceBuilder::new()
                     .layer(tower_http::trace::TraceLayer::new_for_http())
-                    .layer(tower_http::cors::CorsLayer::permissive())
+                    .layer(tower_http::cors::CorsLayer::permissive()),
             )
     }
-    
+
     /// Register a new provider
     pub async fn register_provider(&self, provider: Provider) -> carbide_core::Result<()> {
-        info!("📝 Registering provider: {} ({})", provider.name, provider.id);
-        
+        info!(
+            "📝 Registering provider: {} ({})",
+            provider.name, provider.id
+        );
+
         let entry = RegistryEntry::new(provider.clone());
-        
+
         // Insert into main registry
         self.registry.insert(provider.id, entry);
-        
+
         // Update regional index
-        self.regional_index.entry(provider.region.clone())
-            .or_insert_with(Vec::new)
+        self.regional_index
+            .entry(provider.region.clone())
+            .or_default()
             .push(provider.id);
-            
+
         // Update tier index
-        self.tier_index.entry(provider.tier.clone())
-            .or_insert_with(Vec::new)
+        self.tier_index
+            .entry(provider.tier)
+            .or_default()
             .push(provider.id);
-        
+
         info!("✅ Provider {} registered successfully", provider.id);
         Ok(())
     }
-    
+
     /// Unregister a provider
     pub async fn unregister_provider(&self, provider_id: ProviderId) -> carbide_core::Result<()> {
         info!("🗑️ Unregistering provider: {}", provider_id);
-        
+
         if let Some((_, entry)) = self.registry.remove(&provider_id) {
             // Remove from regional index
-            if let Some(mut region_providers) = self.regional_index.get_mut(&entry.provider.region) {
+            if let Some(mut region_providers) = self.regional_index.get_mut(&entry.provider.region)
+            {
                 region_providers.retain(|&id| id != provider_id);
             }
-            
+
             // Remove from tier index
             if let Some(mut tier_providers) = self.tier_index.get_mut(&entry.provider.tier) {
                 tier_providers.retain(|&id| id != provider_id);
             }
-            
+
             info!("✅ Provider {} unregistered", provider_id);
             Ok(())
         } else {
             Err(CarbideError::Internal("Provider not found".to_string()))
         }
     }
-    
+
     /// Update provider heartbeat
-    pub async fn update_heartbeat(&self, provider_id: ProviderId, status: ServiceStatus) -> carbide_core::Result<()> {
+    pub async fn update_heartbeat(
+        &self,
+        provider_id: ProviderId,
+        status: ServiceStatus,
+    ) -> carbide_core::Result<()> {
         if let Some(mut entry) = self.registry.get_mut(&provider_id) {
             entry.update_health(status);
             Ok(())
@@ -291,24 +323,26 @@ impl DiscoveryService {
             Err(CarbideError::Internal("Provider not found".to_string()))
         }
     }
-    
+
     /// Search for providers based on criteria
     pub async fn search_providers(&self, request: &ProviderListRequest) -> ProviderListResponse {
         let mut matching_providers = Vec::new();
-        
+
         // Start with all providers or filter by region/tier
         let candidate_ids: Vec<ProviderId> = if let Some(region) = &request.region {
-            self.regional_index.get(region)
+            self.regional_index
+                .get(region)
                 .map(|ids| ids.value().clone())
                 .unwrap_or_default()
         } else if let Some(tier) = &request.tier {
-            self.tier_index.get(tier)
+            self.tier_index
+                .get(tier)
                 .map(|ids| ids.value().clone())
                 .unwrap_or_default()
         } else {
             self.registry.iter().map(|entry| *entry.key()).collect()
         };
-        
+
         // Filter candidates
         for provider_id in candidate_ids {
             if let Some(entry) = self.registry.get(&provider_id) {
@@ -316,70 +350,70 @@ impl DiscoveryService {
                 if !entry.is_online(self.config.provider_timeout) {
                     continue;
                 }
-                
+
                 // Check reputation filter
                 if let Some(min_rep) = request.min_reputation {
                     if entry.provider.reputation.overall < min_rep {
                         continue;
                     }
                 }
-                
+
                 matching_providers.push(entry.provider.clone());
-                
+
                 // Respect limit
                 if let Some(limit) = request.limit {
                     if matching_providers.len() >= limit {
                         break;
                     }
                 }
-                
+
                 if matching_providers.len() >= self.config.max_search_results {
                     break;
                 }
             }
         }
-        
+
         // Sort by reputation (descending)
         matching_providers.sort_by(|a, b| b.reputation.overall.cmp(&a.reputation.overall));
-        
+
         let total_count = matching_providers.len();
         let has_more = total_count >= self.config.max_search_results;
-        
+
         ProviderListResponse {
             providers: matching_providers,
             total_count,
             has_more,
         }
     }
-    
+
     /// Background task for health checking providers
     async fn health_checker_task(&self) {
         let mut interval = interval(self.config.health_check_interval);
-        
+
         loop {
             interval.tick().await;
             self.perform_health_checks().await;
         }
     }
-    
+
     /// Perform health checks on all providers
     async fn perform_health_checks(&self) {
         let mut check_tasks = Vec::new();
-        
+
         for entry in self.registry.iter() {
             let provider_id = *entry.key();
             let provider = entry.provider.clone();
-            
+
             let task = tokio::spawn(async move {
                 // Create HTTP client for health check
                 let client = reqwest::Client::builder()
                     .timeout(Duration::from_secs(10))
                     .build();
-                
+
                 match client {
                     Ok(client) => {
                         let health_url = format!("{}/api/v1/health", provider.endpoint);
-                        
+
                         match client.get(&health_url).send().await {
                             Ok(response) if response.status().is_success() => {
                                 (provider_id, ServiceStatus::Healthy)
@@ -400,16 +434,16 @@ impl DiscoveryService {
                     }
                 }
             });
-            
+
             check_tasks.push(task);
         }
-        
+
         // Wait for all health checks to complete
         for task in check_tasks {
             if let Ok((provider_id, status)) = task.await {
                 if let Some(mut entry) = self.registry.get_mut(&provider_id) {
                     entry.update_health(status);
-                    
+
                     // Remove providers that have been offline too long
                     if entry.failed_health_checks > 5 {
                         drop(entry); // Release the lock
@@ -420,51 +454,57 @@ impl DiscoveryService {
             }
         }
     }
-    
+
     /// Background task for updating marketplace statistics
     async fn statistics_updater_task(&self) {
         let mut interval = interval(Duration::from_secs(60)); // Update every minute
-        
+
         loop {
             interval.tick().await;
             self.update_marketplace_stats().await;
         }
     }
-    
+
     /// Update marketplace statistics
     async fn update_marketplace_stats(&self) {
         let mut stats = self.stats.write().await;
-        
+
         let total_providers = self.registry.len();
         let mut online_providers = 0;
         let mut total_capacity = 0u64;
         let mut available_capacity = 0u64;
         let mut price_sum = rust_decimal::Decimal::ZERO;
         let mut price_count = 0;
-        
+
         for entry in self.registry.iter() {
             if entry.is_online(self.config.provider_timeout) {
                 online_providers += 1;
                 total_capacity += entry.provider.total_capacity;
-                available_capacity += entry.available_storage.unwrap_or(entry.provider.available_capacity);
+                available_capacity += entry
+                    .available_storage
+                    .unwrap_or(entry.provider.available_capacity);
                 price_sum += entry.provider.price_per_gb_month;
                 price_count += 1;
             }
         }
-        
+
         stats.total_providers = total_providers;
         stats.online_providers = online_providers;
         stats.total_capacity_bytes = total_capacity;
         stats.available_capacity_bytes = available_capacity;
         stats.average_price_per_gb = if price_count > 0 {
-            price_sum / rust_decimal::Decimal::new(price_count as i64, 0)
+            price_sum / rust_decimal::Decimal::new(i64::from(price_count), 0)
         } else {
             rust_decimal::Decimal::ZERO
         };
         stats.last_updated = Utc::now();
-        
-        info!("📊 Marketplace stats updated: {} providers ({} online), {:.2} GB available", 
-              total_providers, online_providers, available_capacity as f64 / (1024.0 * 1024.0 * 1024.0));
+
+        info!(
+            "📊 Marketplace stats updated: {} providers ({} online), {:.2} GB available",
+            total_providers,
+            online_providers,
+            available_capacity as f64 / (1024.0 * 1024.0 * 1024.0)
+        );
     }
 }
 
@@ -481,7 +521,7 @@ async fn register_provider(
     Json(announcement): Json<ProviderAnnouncement>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     match service.register_provider(announcement.provider).await {
-        Ok(_) => Ok(Json(serde_json::json!({"status": "registered"}))),
+        Ok(()) => Ok(Json(serde_json::json!({"status": "registered"}))),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
@@ -492,8 +532,9 @@ async fn list_providers(
     Query(params): Query<HashMap<String, String>>,
 ) -> Json<ProviderListResponse> {
     let request = ProviderListRequest {
-        region: params.get("region").and_then(|r| {
-            match r.to_lowercase().as_str() {
+        region: params
+            .get("region")
+            .and_then(|r| match r.to_lowercase().as_str() {
                 "northamerica" => Some(Region::NorthAmerica),
                 "europe" => Some(Region::Europe),
                 "asia" => Some(Region::Asia),
@@ -501,21 +542,20 @@ async fn list_providers(
                 "africa" => Some(Region::Africa),
                 "oceania" => Some(Region::Oceania),
                 _ => None,
-            }
-        }),
-        tier: params.get("tier").and_then(|t| {
-            match t.to_lowercase().as_str() {
+            }),
+        tier: params
+            .get("tier")
+            .and_then(|t| match t.to_lowercase().as_str() {
                 "home" => Some(ProviderTier::Home),
                 "professional" => Some(ProviderTier::Professional),
                 "enterprise" => Some(ProviderTier::Enterprise),
                 "globalcdn" => Some(ProviderTier::GlobalCDN),
                 _ => None,
-            }
-        }),
+            }),
         limit: params.get("limit").and_then(|l| l.parse().ok()),
         min_reputation: params.get("min_reputation").and_then(|r| r.parse().ok()),
     };
-    
+
     Json(service.search_providers(&request).await)
 }
 
@@ -524,8 +564,10 @@ async fn get_provider(
     State(service): State<Arc<DiscoveryService>>,
     Path(provider_id): Path<String>,
 ) -> Result<Json<RegistryEntry>, StatusCode> {
-    let id = provider_id.parse::<Uuid>().map_err(|_| StatusCode::BAD_REQUEST)?;
-    
+    let id = provider_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
     if let Some(entry) = service.registry.get(&id) {
         Ok(Json(entry.clone()))
     } else {
@@ -538,10 +580,12 @@ async fn unregister_provider(
     State(service): State<Arc<DiscoveryService>>,
     Path(provider_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let id = provider_id.parse::<Uuid>().map_err(|_| StatusCode::BAD_REQUEST)?;
-    
+    let id = provider_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
     match service.unregister_provider(id).await {
-        Ok(_) => Ok(Json(serde_json::json!({"status": "unregistered"}))),
+        Ok(()) => Ok(Json(serde_json::json!({"status": "unregistered"}))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -552,10 +596,12 @@ async fn provider_heartbeat(
     Path(provider_id): Path<String>,
     Json(heartbeat): Json<HealthCheckResponse>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let id = provider_id.parse::<Uuid>().map_err(|_| StatusCode::BAD_REQUEST)?;
-    
+    let id = provider_id
+        .parse::<Uuid>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
     match service.update_heartbeat(id, heartbeat.status).await {
-        Ok(_) => Ok(Json(serde_json::json!({"status": "updated"}))),
+        Ok(()) => Ok(Json(serde_json::json!({"status": "updated"}))),
         Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
@@ -574,7 +620,7 @@ async fn request_quotes(
     Json(quote_request): Json<StorageQuoteRequest>,
 ) -> Json<Vec<StorageQuoteResponse>> {
     let mut quotes = Vec::new();
-    
+
     // Find relevant providers
     let provider_request = ProviderListRequest {
         region: if quote_request.preferred_regions.is_empty() {
@@ -586,9 +632,9 @@ async fn request_quotes(
         limit: Some(10),
         min_reputation: Some(rust_decimal::Decimal::new(30, 2)), // 0.30 minimum
     };
-    
+
     let providers = service.search_providers(&provider_request).await;
-    
+
     // Request quotes from each provider
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -600,17 +646,17 @@ async fn request_quotes(
             return Json(quotes);
         }
     };
-    
+
     let mut quote_tasks = Vec::new();
-    
+
     for provider in providers.providers {
         let client = client.clone();
         let request = quote_request.clone();
-        
+
         let task = tokio::spawn(async move {
             let quote_url = format!("{}/api/v1/marketplace/quote", provider.endpoint);
             let message = NetworkMessage::new(MessageType::StorageQuoteRequest(request));
-            
+
             match client.post(&quote_url).json(&message).send().await {
                 Ok(response) if response.status().is_success() => {
                     match response.json::<NetworkMessage>().await {
@@ -627,27 +673,25 @@ async fn request_quotes(
                 _ => None,
             }
         });
-        
+
         quote_tasks.push(task);
     }
-    
+
     // Collect all quotes
     for task in quote_tasks {
         if let Ok(Some(quote)) = task.await {
             quotes.push(quote);
         }
     }
-    
+
     // Sort quotes by price (ascending)
     quotes.sort_by(|a, b| a.price_per_gb_month.cmp(&b.price_per_gb_month));
-    
+
     Json(quotes)
 }
 
 /// Get marketplace statistics
-async fn marketplace_stats(
-    State(service): State<Arc<DiscoveryService>>,
-) -> Json<MarketplaceStats> {
+async fn marketplace_stats(State(service): State<Arc<DiscoveryService>>) -> Json<MarketplaceStats> {
     let stats = service.stats.read().await;
     Json(stats.clone())
 }
@@ -657,7 +701,7 @@ async fn discovery_health(
     State(service): State<Arc<DiscoveryService>>,
 ) -> Json<HealthCheckResponse> {
     let stats = service.stats.read().await;
-    
+
     Json(HealthCheckResponse {
         status: ServiceStatus::Healthy,
         timestamp: Utc::now(),

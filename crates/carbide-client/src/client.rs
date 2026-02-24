@@ -3,14 +3,12 @@
 //! This module provides a high-level HTTP client for communicating with
 //! storage providers and marketplace services in the Carbide Network.
 
-use carbide_core::{
-    network::*,
-    ContentHash, FileId, ProviderId, Region, ProviderTier, Result, CarbideError,
-};
-use reqwest::{Client, Response};
-use serde_json;
 use std::time::Duration;
-use tracing::{debug, info, warn, error};
+
+use carbide_core::{network::*, CarbideError, FileId, Result};
+use reqwest::Client;
+use serde_json;
+use tracing::{debug, info, warn};
 
 /// HTTP client configuration
 #[derive(Debug, Clone)]
@@ -52,13 +50,13 @@ impl CarbideClient {
             .timeout(config.timeout)
             .user_agent(&config.user_agent)
             .build()
-            .map_err(|e| CarbideError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| CarbideError::Internal(format!("Failed to create HTTP client: {e}")))?;
 
         Ok(Self { client, config })
     }
 
     /// Create a client with default configuration
-    pub fn default() -> Result<Self> {
+    pub fn with_defaults() -> Result<Self> {
         Self::new(ClientConfig::default())
     }
 
@@ -67,27 +65,34 @@ impl CarbideClient {
     // ============================================================================
 
     /// Get provider health status
-    pub async fn get_provider_health(&self, provider_endpoint: &str) -> Result<HealthCheckResponse> {
+    pub async fn get_provider_health(
+        &self,
+        provider_endpoint: &str,
+    ) -> Result<HealthCheckResponse> {
         let url = format!("{}{}", provider_endpoint, ApiEndpoints::HEALTH_CHECK);
-        
+
         if self.config.enable_logging {
             debug!("Checking provider health: {}", url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Health check failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Health check failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Health check returned status: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Health check returned status: {}",
+                response.status()
+            )));
         }
 
         let network_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse health response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse health response: {e}")))?;
 
         match network_message.message_type {
             MessageType::HealthCheckResponse(health) => {
@@ -96,32 +101,38 @@ impl CarbideClient {
                 }
                 Ok(health)
             }
-            _ => Err(CarbideError::Internal("Unexpected message type for health check".to_string())),
+            _ => Err(CarbideError::Internal(
+                "Unexpected message type for health check".to_string(),
+            )),
         }
     }
 
     /// Get detailed provider status
     pub async fn get_provider_status(&self, provider_endpoint: &str) -> Result<serde_json::Value> {
         let url = format!("{}{}", provider_endpoint, ApiEndpoints::PROVIDER_STATUS);
-        
+
         if self.config.enable_logging {
             debug!("Getting provider status: {}", url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Status request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Status request failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Status request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Status request returned: {}",
+                response.status()
+            )));
         }
 
         response
             .json::<serde_json::Value>()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse status response: {}", e)))
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse status response: {e}")))
     }
 
     // ============================================================================
@@ -135,43 +146,51 @@ impl CarbideClient {
         request: &StorageQuoteRequest,
     ) -> Result<StorageQuoteResponse> {
         let url = format!("{}{}", provider_endpoint, ApiEndpoints::STORAGE_QUOTE);
-        
-        let network_message = NetworkMessage::new(
-            MessageType::StorageQuoteRequest(request.clone())
-        );
+
+        let network_message =
+            NetworkMessage::new(MessageType::StorageQuoteRequest(request.clone()));
 
         if self.config.enable_logging {
             debug!("Requesting storage quote from: {}", url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Quote request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Quote request failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Quote request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Quote request returned: {}",
+                response.status()
+            )));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse quote response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse quote response: {e}")))?;
 
         match response_message.message_type {
             MessageType::StorageQuoteResponse(quote) => {
                 if self.config.enable_logging {
-                    info!("Received quote: ${}/month for {} bytes", 
-                          quote.total_monthly_cost, request.file_size);
+                    info!(
+                        "Received quote: ${}/month for {} bytes",
+                        quote.total_monthly_cost, request.file_size
+                    );
                 }
                 Ok(quote)
             }
-            MessageType::Error(error) => {
-                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
-            }
-            _ => Err(CarbideError::Internal("Unexpected response type for quote request".to_string())),
+            MessageType::Error(error) => Err(CarbideError::Provider(format!(
+                "Provider error: {}",
+                error.message
+            ))),
+            _ => Err(CarbideError::Internal(
+                "Unexpected response type for quote request".to_string(),
+            )),
         }
     }
 
@@ -182,30 +201,32 @@ impl CarbideClient {
         request: &StoreFileRequest,
     ) -> Result<StoreFileResponse> {
         let url = format!("{}{}", provider_endpoint, ApiEndpoints::FILE_STORE);
-        
-        let network_message = NetworkMessage::new(
-            MessageType::StoreFileRequest(request.clone())
-        );
+
+        let network_message = NetworkMessage::new(MessageType::StoreFileRequest(request.clone()));
 
         if self.config.enable_logging {
             debug!("Requesting file storage from: {}", url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Store request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Store request failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Store request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Store request returned: {}",
+                response.status()
+            )));
         }
 
         let response_message: NetworkMessage = response
             .json()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse store response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse store response: {e}")))?;
 
         match response_message.message_type {
             MessageType::StoreFileResponse(store_response) => {
@@ -213,15 +234,21 @@ impl CarbideClient {
                     if store_response.accepted {
                         info!("Storage request accepted by provider");
                     } else {
-                        warn!("Storage request rejected: {:?}", store_response.rejection_reason);
+                        warn!(
+                            "Storage request rejected: {:?}",
+                            store_response.rejection_reason
+                        );
                     }
                 }
                 Ok(store_response)
             }
-            MessageType::Error(error) => {
-                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
-            }
-            _ => Err(CarbideError::Internal("Unexpected response type for store request".to_string())),
+            MessageType::Error(error) => Err(CarbideError::Provider(format!(
+                "Provider error: {}",
+                error.message
+            ))),
+            _ => Err(CarbideError::Internal(
+                "Unexpected response type for store request".to_string(),
+            )),
         }
     }
 
@@ -241,28 +268,32 @@ impl CarbideClient {
         let file_part = reqwest::multipart::Part::bytes(file_data.to_vec())
             .file_name("upload")
             .mime_str("application/octet-stream")
-            .map_err(|e| CarbideError::Internal(format!("Invalid MIME type: {}", e)))?;
+            .map_err(|e| CarbideError::Internal(format!("Invalid MIME type: {e}")))?;
 
         let form = reqwest::multipart::Form::new()
             .text("file_id", file_id.to_hex())
             .text("token", upload_token.to_string())
             .part("file", file_part);
 
-        let response = self.client
+        let response = self
+            .client
             .post(upload_url)
             .multipart(form)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("File upload failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("File upload failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Upload returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Upload returned: {}",
+                response.status()
+            )));
         }
 
         let result: serde_json::Value = response
             .json()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse upload response: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to parse upload response: {e}")))?;
 
         if self.config.enable_logging {
             info!("File {} uploaded successfully", file_id);
@@ -278,27 +309,35 @@ impl CarbideClient {
         file_id: &FileId,
         access_token: &str,
     ) -> Result<RetrieveFileResponse> {
-        let url = format!("{}{}/{}", provider_endpoint, ApiEndpoints::FILE_RETRIEVE, file_id);
-        
+        let url = format!(
+            "{}{}/{}",
+            provider_endpoint,
+            ApiEndpoints::FILE_RETRIEVE,
+            file_id
+        );
+
         if self.config.enable_logging {
             debug!("Retrieving file {} from: {}", file_id, url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Authorization", format!("Bearer {access_token}"))
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Retrieve request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Retrieve request failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Retrieve request returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Retrieve request returned: {}",
+                response.status()
+            )));
         }
 
-        let response_message: NetworkMessage = response
-            .json()
-            .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse retrieve response: {}", e)))?;
+        let response_message: NetworkMessage = response.json().await.map_err(|e| {
+            CarbideError::Provider(format!("Failed to parse retrieve response: {e}"))
+        })?;
 
         match response_message.message_type {
             MessageType::RetrieveFileResponse(retrieve_response) => {
@@ -307,10 +346,13 @@ impl CarbideClient {
                 }
                 Ok(retrieve_response)
             }
-            MessageType::Error(error) => {
-                Err(CarbideError::Provider(format!("Provider error: {}", error.message)))
-            }
-            _ => Err(CarbideError::Internal("Unexpected response type for retrieve request".to_string())),
+            MessageType::Error(error) => Err(CarbideError::Provider(format!(
+                "Provider error: {}",
+                error.message
+            ))),
+            _ => Err(CarbideError::Internal(
+                "Unexpected response type for retrieve request".to_string(),
+            )),
         }
     }
 
@@ -320,20 +362,24 @@ impl CarbideClient {
             debug!("Downloading file from: {}", download_url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .get(download_url)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Download failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Download failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Download returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Download returned: {}",
+                response.status()
+            )));
         }
 
         let data = response
             .bytes()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to read download data: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Failed to read download data: {e}")))?;
 
         if self.config.enable_logging {
             info!("Downloaded {} bytes", data.len());
@@ -353,42 +399,49 @@ impl CarbideClient {
         challenge: &StorageChallengeData,
     ) -> Result<StorageProofData> {
         let url = format!("{}{}", provider_endpoint, ApiEndpoints::PROOF_CHALLENGE);
-        
-        let network_message = NetworkMessage::new(
-            MessageType::StorageChallenge(challenge.clone())
-        );
+
+        let network_message = NetworkMessage::new(MessageType::StorageChallenge(challenge.clone()));
 
         if self.config.enable_logging {
             debug!("Sending storage challenge to: {}", url);
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&network_message)
             .send()
             .await
-            .map_err(|e| CarbideError::Provider(format!("Challenge request failed: {}", e)))?;
+            .map_err(|e| CarbideError::Provider(format!("Challenge request failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Provider(format!("Challenge returned: {}", response.status())));
+            return Err(CarbideError::Provider(format!(
+                "Challenge returned: {}",
+                response.status()
+            )));
         }
 
-        let response_message: NetworkMessage = response
-            .json()
-            .await
-            .map_err(|e| CarbideError::Provider(format!("Failed to parse challenge response: {}", e)))?;
+        let response_message: NetworkMessage = response.json().await.map_err(|e| {
+            CarbideError::Provider(format!("Failed to parse challenge response: {e}"))
+        })?;
 
         match response_message.message_type {
             MessageType::StorageProof(proof) => {
                 if self.config.enable_logging {
-                    info!("Received storage proof for challenge {}", challenge.challenge_id);
+                    info!(
+                        "Received storage proof for challenge {}",
+                        challenge.challenge_id
+                    );
                 }
                 Ok(proof)
             }
-            MessageType::Error(error) => {
-                Err(CarbideError::Provider(format!("Challenge error: {}", error.message)))
-            }
-            _ => Err(CarbideError::Internal("Unexpected response type for challenge".to_string())),
+            MessageType::Error(error) => Err(CarbideError::Provider(format!(
+                "Challenge error: {}",
+                error.message
+            ))),
+            _ => Err(CarbideError::Internal(
+                "Unexpected response type for challenge".to_string(),
+            )),
         }
     }
 
@@ -406,7 +459,7 @@ impl CarbideClient {
             }
 
             let start_time = std::time::Instant::now();
-            
+
             let result = match self.get_provider_health(endpoint).await {
                 Ok(health) => ProviderTestResult {
                     endpoint: endpoint.clone(),
@@ -453,13 +506,14 @@ pub struct ProviderTestResult {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_client_config_default() {
         let config = ClientConfig::default();
-        
+
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.user_agent, "Carbide-Client/1.0");
@@ -470,13 +524,13 @@ mod tests {
     fn test_client_creation() {
         let config = ClientConfig::default();
         let client = CarbideClient::new(config);
-        
+
         assert!(client.is_ok());
     }
 
     #[test]
-    fn test_client_default() {
-        let client = CarbideClient::default();
+    fn test_client_with_defaults() {
+        let client = CarbideClient::with_defaults();
         assert!(client.is_ok());
     }
 }

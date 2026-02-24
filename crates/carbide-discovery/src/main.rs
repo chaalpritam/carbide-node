@@ -3,9 +3,10 @@
 //! Provider discovery and marketplace coordination service that acts as
 //! the central registry for storage providers in the Carbide Network.
 
-use carbide_discovery::{DiscoveryService, DiscoveryConfig};
-use clap::Parser;
 use std::time::Duration;
+
+use carbide_discovery::{DiscoveryConfig, DiscoveryService};
+use clap::Parser;
 
 #[derive(Parser)]
 #[command(name = "carbide-discovery")]
@@ -89,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             let service = DiscoveryService::new(config);
-            
+
             // Handle shutdown gracefully
             tokio::select! {
                 result = service.start() => {
@@ -101,16 +102,16 @@ async fn main() -> anyhow::Result<()> {
                     println!("🛑 Received shutdown signal, stopping discovery service...");
                 }
             }
-            
+
             println!("✅ Discovery service shut down gracefully");
         }
-        
+
         Command::Stats { endpoint } => {
             println!("📊 Fetching marketplace statistics from {}...", endpoint);
-            
+
             let client = reqwest::Client::new();
             let stats_url = format!("{}/api/v1/marketplace/stats", endpoint);
-            
+
             match client.get(&stats_url).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
@@ -132,71 +133,102 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        
-        Command::Providers { 
-            endpoint, 
-            region, 
-            tier, 
-            limit 
+
+        Command::Providers {
+            endpoint,
+            region,
+            tier,
+            limit,
         } => {
             println!("👥 Fetching providers from {}...", endpoint);
-            
+
             let client = reqwest::Client::new();
             let mut providers_url = format!("{}/api/v1/providers?limit={}", endpoint, limit);
-            
+
             if let Some(r) = region {
                 providers_url.push_str(&format!("&region={}", r));
             }
             if let Some(t) = tier {
                 providers_url.push_str(&format!("&tier={}", t));
             }
-            
+
             match client.get(&providers_url).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
                         match response.json::<serde_json::Value>().await {
                             Ok(provider_list) => {
                                 println!("✅ Registered Providers:");
-                                
-                                if let Some(providers) = provider_list.get("providers").and_then(|p| p.as_array()) {
+
+                                if let Some(providers) =
+                                    provider_list.get("providers").and_then(|p| p.as_array())
+                                {
                                     if providers.is_empty() {
                                         println!("   No providers found matching criteria");
                                     } else {
                                         for (i, provider) in providers.iter().enumerate() {
                                             println!("   {}. Provider:", i + 1);
-                                            
-                                            if let Some(name) = provider.get("name").and_then(|n| n.as_str()) {
+
+                                            if let Some(name) =
+                                                provider.get("name").and_then(|n| n.as_str())
+                                            {
                                                 println!("      Name: {}", name);
                                             }
-                                            if let Some(id) = provider.get("id").and_then(|i| i.as_str()) {
+                                            if let Some(id) =
+                                                provider.get("id").and_then(|i| i.as_str())
+                                            {
                                                 println!("      ID: {}", id);
                                             }
-                                            if let Some(region) = provider.get("region").and_then(|r| r.as_str()) {
+                                            if let Some(region) =
+                                                provider.get("region").and_then(|r| r.as_str())
+                                            {
                                                 println!("      Region: {}", region);
                                             }
-                                            if let Some(tier) = provider.get("tier").and_then(|t| t.as_str()) {
+                                            if let Some(tier) =
+                                                provider.get("tier").and_then(|t| t.as_str())
+                                            {
                                                 println!("      Tier: {}", tier);
                                             }
-                                            if let Some(price) = provider.get("price_per_gb_month").and_then(|p| p.as_str()) {
+                                            if let Some(price) = provider
+                                                .get("price_per_gb_month")
+                                                .and_then(|p| p.as_str())
+                                            {
                                                 println!("      Price: ${}/GB/month", price);
                                             }
-                                            if let Some(capacity) = provider.get("total_capacity").and_then(|c| c.as_u64()) {
-                                                println!("      Capacity: {:.2} GB", capacity as f64 / (1024.0 * 1024.0 * 1024.0));
+                                            if let Some(capacity) = provider
+                                                .get("total_capacity")
+                                                .and_then(|c| c.as_u64())
+                                            {
+                                                println!(
+                                                    "      Capacity: {:.2} GB",
+                                                    capacity as f64 / (1024.0 * 1024.0 * 1024.0)
+                                                );
                                             }
-                                            
-                                            if let Some(reputation) = provider.get("reputation").and_then(|r| r.get("overall")).and_then(|o| o.as_str()) {
+
+                                            if let Some(reputation) = provider
+                                                .get("reputation")
+                                                .and_then(|r| r.get("overall"))
+                                                .and_then(|o| o.as_str())
+                                            {
                                                 println!("      Reputation: {}", reputation);
                                             }
-                                            
+
                                             println!();
                                         }
-                                        
-                                        if let Some(total) = provider_list.get("total_count").and_then(|t| t.as_u64()) {
+
+                                        if let Some(total) = provider_list
+                                            .get("total_count")
+                                            .and_then(|t| t.as_u64())
+                                        {
                                             println!("   Total providers: {}", total);
                                         }
-                                        if let Some(has_more) = provider_list.get("has_more").and_then(|h| h.as_bool()) {
+                                        if let Some(has_more) =
+                                            provider_list.get("has_more").and_then(|h| h.as_bool())
+                                        {
                                             if has_more {
-                                                println!("   (More providers available - increase limit to see more)");
+                                                println!(
+                                                    "   (More providers available - increase \
+                                                     limit to see more)"
+                                                );
                                             }
                                         }
                                     }

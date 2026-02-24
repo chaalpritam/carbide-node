@@ -3,12 +3,12 @@
 //! This module implements the core reputation calculation logic,
 //! including weighted scoring, time decay, and trend analysis.
 
-use crate::{ReputationEvent, utils::calculate_time_decay};
-use carbide_core::{ReputationScore, Result, CarbideError};
+use carbide_core::{CarbideError, ReputationScore, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use num_traits::ToPrimitive;
+
+use crate::{utils::calculate_time_decay, ReputationEvent};
 
 /// Weights for different reputation components
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,15 +40,19 @@ impl Default for ReputationWeights {
 impl ReputationWeights {
     /// Validate that weights sum to 1.0
     pub fn validate(&self) -> Result<()> {
-        let total = self.uptime + self.data_integrity + self.response_time 
-                   + self.contract_compliance + self.community_feedback;
-        
-        if (total - Decimal::ONE).abs() > Decimal::new(1, 3) { // Allow 0.001 tolerance
-            return Err(CarbideError::Internal(
-                format!("Reputation weights must sum to 1.0, got {}", total)
-            ));
+        let total = self.uptime
+            + self.data_integrity
+            + self.response_time
+            + self.contract_compliance
+            + self.community_feedback;
+
+        if (total - Decimal::ONE).abs() > Decimal::new(1, 3) {
+            // Allow 0.001 tolerance
+            return Err(CarbideError::Internal(format!(
+                "Reputation weights must sum to 1.0, got {total}"
+            )));
         }
-        
+
         Ok(())
     }
 
@@ -171,7 +175,7 @@ impl ReputationCalculator {
         }
 
         let components = self.calculate_component_scores(events, current_time)?;
-        
+
         // Calculate weighted overall score
         let overall = (components.uptime * self.config.weights.uptime)
             + (components.data_integrity * self.config.weights.data_integrity)
@@ -203,16 +207,16 @@ impl ReputationCalculator {
 
         // Calculate uptime score
         let uptime = self.calculate_uptime_score(events, current_time)?;
-        
+
         // Calculate data integrity score
         let data_integrity = self.calculate_data_integrity_score(events, current_time)?;
-        
+
         // Calculate response time score
         let response_time = self.calculate_response_time_score(events, current_time)?;
-        
+
         // Calculate contract compliance score
         let contract_compliance = self.calculate_contract_compliance_score(events, current_time)?;
-        
+
         // Calculate community feedback score
         let community_feedback = self.calculate_community_feedback_score(events, current_time)?;
 
@@ -227,10 +231,12 @@ impl ReputationCalculator {
     }
 
     /// Calculate uptime score from online/offline events
-    fn calculate_uptime_score(&self, events: &[ReputationEvent], current_time: DateTime<Utc>) -> Result<Decimal> {
-        let uptime_events: Vec<_> = events.iter()
-            .filter(|e| e.affects_uptime())
-            .collect();
+    fn calculate_uptime_score(
+        &self,
+        events: &[ReputationEvent],
+        current_time: DateTime<Utc>,
+    ) -> Result<Decimal> {
+        let uptime_events: Vec<_> = events.iter().filter(|e| e.affects_uptime()).collect();
 
         if uptime_events.is_empty() {
             return Ok(Decimal::ONE); // Default to 100% uptime
@@ -244,8 +250,12 @@ impl ReputationCalculator {
             let score = match event.event_type {
                 crate::events::EventType::Online => Decimal::ONE,
                 crate::events::EventType::Offline => Decimal::ZERO,
-                crate::events::EventType::MaintenanceWindow { announced: true, .. } => Decimal::new(9, 1), // 0.9
-                crate::events::EventType::MaintenanceWindow { announced: false, .. } => Decimal::new(5, 1), // 0.5
+                crate::events::EventType::MaintenanceWindow {
+                    announced: true, ..
+                } => Decimal::new(9, 1), // 0.9
+                crate::events::EventType::MaintenanceWindow {
+                    announced: false, ..
+                } => Decimal::new(5, 1), // 0.5
                 _ => Decimal::new(8, 1), // 0.8 default
             };
 
@@ -261,8 +271,13 @@ impl ReputationCalculator {
     }
 
     /// Calculate data integrity score from proof events
-    fn calculate_data_integrity_score(&self, events: &[ReputationEvent], current_time: DateTime<Utc>) -> Result<Decimal> {
-        let integrity_events: Vec<_> = events.iter()
+    fn calculate_data_integrity_score(
+        &self,
+        events: &[ReputationEvent],
+        current_time: DateTime<Utc>,
+    ) -> Result<Decimal> {
+        let integrity_events: Vec<_> = events
+            .iter()
             .filter(|e| e.affects_data_integrity())
             .collect();
 
@@ -278,8 +293,12 @@ impl ReputationCalculator {
             let score = match event.event_type {
                 crate::events::EventType::ProofSuccess { .. } => Decimal::ONE,
                 crate::events::EventType::ProofFailure { .. } => Decimal::ZERO,
-                crate::events::EventType::DataCorruption { recovered: true, .. } => Decimal::new(3, 1), // 0.3
-                crate::events::EventType::DataCorruption { recovered: false, .. } => Decimal::ZERO,
+                crate::events::EventType::DataCorruption {
+                    recovered: true, ..
+                } => Decimal::new(3, 1), // 0.3
+                crate::events::EventType::DataCorruption {
+                    recovered: false, ..
+                } => Decimal::ZERO,
                 _ => Decimal::new(8, 1), // 0.8 default
             };
 
@@ -295,8 +314,13 @@ impl ReputationCalculator {
     }
 
     /// Calculate response time score from performance events
-    fn calculate_response_time_score(&self, events: &[ReputationEvent], current_time: DateTime<Utc>) -> Result<Decimal> {
-        let response_events: Vec<_> = events.iter()
+    fn calculate_response_time_score(
+        &self,
+        events: &[ReputationEvent],
+        current_time: DateTime<Utc>,
+    ) -> Result<Decimal> {
+        let response_events: Vec<_> = events
+            .iter()
             .filter(|e| e.affects_response_time())
             .collect();
 
@@ -337,8 +361,13 @@ impl ReputationCalculator {
     }
 
     /// Calculate contract compliance score
-    fn calculate_contract_compliance_score(&self, events: &[ReputationEvent], current_time: DateTime<Utc>) -> Result<Decimal> {
-        let contract_events: Vec<_> = events.iter()
+    fn calculate_contract_compliance_score(
+        &self,
+        events: &[ReputationEvent],
+        current_time: DateTime<Utc>,
+    ) -> Result<Decimal> {
+        let contract_events: Vec<_> = events
+            .iter()
             .filter(|e| e.affects_contract_compliance())
             .collect();
 
@@ -370,8 +399,13 @@ impl ReputationCalculator {
     }
 
     /// Calculate community feedback score
-    fn calculate_community_feedback_score(&self, events: &[ReputationEvent], current_time: DateTime<Utc>) -> Result<Decimal> {
-        let feedback_events: Vec<_> = events.iter()
+    fn calculate_community_feedback_score(
+        &self,
+        events: &[ReputationEvent],
+        current_time: DateTime<Utc>,
+    ) -> Result<Decimal> {
+        let feedback_events: Vec<_> = events
+            .iter()
             .filter(|e| e.affects_community_feedback())
             .collect();
 
@@ -384,9 +418,11 @@ impl ReputationCalculator {
 
         for event in feedback_events {
             let weight = self.calculate_event_weight(event, current_time);
-            let score = if let crate::events::EventType::CommunityFeedback { rating, .. } = event.event_type {
+            let score = if let crate::events::EventType::CommunityFeedback { rating, .. } =
+                event.event_type
+            {
                 // Convert 1-5 rating to 0.0-1.0 score
-                Decimal::new(rating as i64 - 1, 1) / Decimal::new(4, 0) // (rating - 1) / 4
+                Decimal::new(i64::from(rating) - 1, 1) / Decimal::new(4, 0) // (rating - 1) / 4
             } else {
                 Decimal::new(5, 1) // Default neutral score
             };
@@ -403,15 +439,16 @@ impl ReputationCalculator {
     }
 
     /// Calculate time-decayed weight for an event
-    fn calculate_event_weight(&self, event: &ReputationEvent, current_time: DateTime<Utc>) -> Decimal {
-        let time_decay = calculate_time_decay(
-            event.timestamp,
-            current_time,
-            self.config.time_decay_factor,
-        );
-        
+    fn calculate_event_weight(
+        &self,
+        event: &ReputationEvent,
+        current_time: DateTime<Utc>,
+    ) -> Decimal {
+        let time_decay =
+            calculate_time_decay(event.timestamp, current_time, self.config.time_decay_factor);
+
         let base_weight = Decimal::from_f64_retain(event.weight()).unwrap_or(Decimal::ONE);
-        
+
         // Apply penalty/bonus multipliers
         let multiplier = if event.impact_score() > 0.0 {
             self.config.bonus_multiplier
@@ -420,14 +457,20 @@ impl ReputationCalculator {
         } else {
             Decimal::ONE
         };
-        
+
         base_weight * time_decay * multiplier
     }
 
     /// Count completed contracts from events
     fn count_completed_contracts(&self, events: &[ReputationEvent]) -> u64 {
-        events.iter()
-            .filter(|e| matches!(e.event_type, crate::events::EventType::ContractCompleted { .. }))
+        events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.event_type,
+                    crate::events::EventType::ContractCompleted { .. }
+                )
+            })
             .count() as u64
     }
 
@@ -437,9 +480,15 @@ impl ReputationCalculator {
         let uptime_events = events.iter().filter(|e| e.affects_uptime()).count();
         let data_integrity_events = events.iter().filter(|e| e.affects_data_integrity()).count();
         let response_time_events = events.iter().filter(|e| e.affects_response_time()).count();
-        let contract_events = events.iter().filter(|e| e.affects_contract_compliance()).count();
-        let feedback_events = events.iter().filter(|e| e.affects_community_feedback()).count();
-        
+        let contract_events = events
+            .iter()
+            .filter(|e| e.affects_contract_compliance())
+            .count();
+        let feedback_events = events
+            .iter()
+            .filter(|e| e.affects_community_feedback())
+            .count();
+
         let positive_events = events.iter().filter(|e| e.impact_score() > 0.0).count();
         let negative_events = events.iter().filter(|e| e.impact_score() < 0.0).count();
 
@@ -480,7 +529,7 @@ impl ReputationCalculator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{EventType, EventSeverity, ReputationEvent};
+    use crate::events::{EventSeverity, EventType, ReputationEvent};
 
     #[test]
     fn test_weights_validation() {
@@ -488,11 +537,11 @@ mod tests {
         assert!(valid_weights.validate().is_ok());
 
         let invalid_weights = ReputationWeights {
-            uptime: Decimal::new(5, 1), // 0.5
-            data_integrity: Decimal::new(3, 1), // 0.3
-            response_time: Decimal::new(1, 1), // 0.1
+            uptime: Decimal::new(5, 1),              // 0.5
+            data_integrity: Decimal::new(3, 1),      // 0.3
+            response_time: Decimal::new(1, 1),       // 0.1
             contract_compliance: Decimal::new(2, 1), // 0.2
-            community_feedback: Decimal::new(1, 1), // 0.1 (total = 1.2)
+            community_feedback: Decimal::new(1, 1),  // 0.1 (total = 1.2)
         };
         assert!(invalid_weights.validate().is_err());
     }
@@ -509,7 +558,7 @@ mod tests {
         let calculator = ReputationCalculator::new(ScoringConfig::default());
         let events = vec![];
         let score = calculator.calculate_score(&events, Utc::now()).unwrap();
-        
+
         assert_eq!(score.overall, ReputationScore::new().overall);
     }
 
@@ -517,16 +566,12 @@ mod tests {
     fn test_online_event_scoring() {
         let calculator = ReputationCalculator::new(ScoringConfig::default());
         let provider_id = uuid::Uuid::new_v4();
-        
-        let event = ReputationEvent::new(
-            provider_id,
-            EventType::Online,
-            EventSeverity::Positive,
-        );
-        
+
+        let event = ReputationEvent::new(provider_id, EventType::Online, EventSeverity::Positive);
+
         let events = vec![event];
         let score = calculator.calculate_score(&events, Utc::now()).unwrap();
-        
+
         // Should have perfect uptime score
         assert_eq!(score.uptime, Decimal::ONE);
     }
@@ -535,16 +580,19 @@ mod tests {
     fn test_proof_success_scoring() {
         let calculator = ReputationCalculator::new(ScoringConfig::default());
         let provider_id = uuid::Uuid::new_v4();
-        
+
         let event = ReputationEvent::new(
             provider_id,
-            EventType::ProofSuccess { response_time_ms: 150, chunks_proven: 5 },
+            EventType::ProofSuccess {
+                response_time_ms: 150,
+                chunks_proven: 5,
+            },
             EventSeverity::Positive,
         );
-        
+
         let events = vec![event];
         let score = calculator.calculate_score(&events, Utc::now()).unwrap();
-        
+
         // Should have perfect data integrity and good response time
         assert_eq!(score.data_integrity, Decimal::ONE);
         assert!(score.response_time >= Decimal::new(8, 1)); // >= 0.8 (150ms is in good range)
@@ -554,14 +602,23 @@ mod tests {
     fn test_component_scores() {
         let calculator = ReputationCalculator::new(ScoringConfig::default());
         let provider_id = uuid::Uuid::new_v4();
-        
+
         let events = vec![
             ReputationEvent::new(provider_id, EventType::Online, EventSeverity::Positive),
-            ReputationEvent::new(provider_id, EventType::ProofSuccess { response_time_ms: 100, chunks_proven: 3 }, EventSeverity::Positive),
+            ReputationEvent::new(
+                provider_id,
+                EventType::ProofSuccess {
+                    response_time_ms: 100,
+                    chunks_proven: 3,
+                },
+                EventSeverity::Positive,
+            ),
         ];
-        
-        let components = calculator.calculate_component_scores(&events, Utc::now()).unwrap();
-        
+
+        let components = calculator
+            .calculate_component_scores(&events, Utc::now())
+            .unwrap();
+
         assert_eq!(components.uptime, Decimal::ONE);
         assert_eq!(components.data_integrity, Decimal::ONE);
         assert_eq!(components.event_counts.total, 2);

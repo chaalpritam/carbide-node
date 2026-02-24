@@ -2,14 +2,15 @@
 //!
 //! Command-line interface for interacting with the Carbide Network
 
-use carbide_client::{CarbideClient, ClientConfig};
-use carbide_core::{ContentHash, network::*};
+use carbide_client::CarbideClient;
+use carbide_core::network::*;
 use clap::Parser;
-use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "carbide-client")]
-#[command(about = "Carbide Network Client - Store and retrieve files from the decentralized network")]
+#[command(
+    about = "Carbide Network Client - Store and retrieve files from the decentralized network"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -58,26 +59,27 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
-    
+
     // Create client with default config
-    let client = CarbideClient::default()?;
+    let client = CarbideClient::with_defaults()?;
 
     match cli.command {
         Command::Test { providers } => {
             println!("🧪 Testing Provider Connectivity...");
-            
-            let endpoints: Vec<String> = providers
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            
+
+            let endpoints: Vec<String> =
+                providers.split(',').map(|s| s.trim().to_string()).collect();
+
             let results = client.test_providers(&endpoints).await;
-            
+
             println!("\n📊 Test Results:");
             for result in results {
                 let status_icon = if result.online { "✅" } else { "❌" };
-                println!("  {} {} ({} ms)", status_icon, result.endpoint, result.latency_ms);
-                
+                println!(
+                    "  {} {} ({} ms)",
+                    status_icon, result.endpoint, result.latency_ms
+                );
+
                 if let Some(error) = result.error {
                     println!("     Error: {}", error);
                 } else {
@@ -85,25 +87,27 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        
+
         Command::Health { endpoint } => {
             println!("🏥 Checking Provider Health: {}", endpoint);
-            
+
             match client.get_provider_health(&endpoint).await {
                 Ok(health) => {
                     println!("✅ Provider is healthy!");
                     println!("   Status: {:?}", health.status);
                     println!("   Version: {}", health.version);
-                    
+
                     if let Some(storage) = health.available_storage {
-                        println!("   Available Storage: {:.2} GB", 
-                                storage as f64 / (1024.0 * 1024.0 * 1024.0));
+                        println!(
+                            "   Available Storage: {:.2} GB",
+                            storage as f64 / (1024.0 * 1024.0 * 1024.0)
+                        );
                     }
-                    
+
                     if let Some(load) = health.load {
                         println!("   Load: {:.1}%", load * 100.0);
                     }
-                    
+
                     if let Some(reputation) = health.reputation {
                         println!("   Reputation: {:.2}/1.0", reputation);
                     }
@@ -113,10 +117,10 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        
+
         Command::Status { endpoint } => {
             println!("📊 Getting Provider Status: {}", endpoint);
-            
+
             match client.get_provider_status(&endpoint).await {
                 Ok(status) => {
                     println!("✅ Provider Status:");
@@ -127,24 +131,25 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        
-        Command::Quote { 
-            file_size, 
-            replication, 
-            duration, 
-            providers 
+
+        Command::Quote {
+            file_size,
+            replication,
+            duration,
+            providers,
         } => {
             println!("💰 Requesting Storage Quotes...");
-            println!("   File Size: {} bytes ({:.2} MB)", 
-                    file_size, file_size as f64 / (1024.0 * 1024.0));
+            println!(
+                "   File Size: {} bytes ({:.2} MB)",
+                file_size,
+                file_size as f64 / (1024.0 * 1024.0)
+            );
             println!("   Replication: {} copies", replication);
             println!("   Duration: {} months", duration);
-            
-            let endpoints: Vec<String> = providers
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            
+
+            let endpoints: Vec<String> =
+                providers.split(',').map(|s| s.trim().to_string()).collect();
+
             let quote_request = StorageQuoteRequest {
                 file_size,
                 replication_factor: replication,
@@ -152,22 +157,27 @@ async fn main() -> anyhow::Result<()> {
                 requirements: carbide_core::ProviderRequirements::important(),
                 preferred_regions: vec![],
             };
-            
+
             println!("\n📋 Quotes from {} providers:", endpoints.len());
-            
+
             for (i, endpoint) in endpoints.iter().enumerate() {
                 print!("  {}. {} ... ", i + 1, endpoint);
-                
+
                 match client.request_storage_quote(endpoint, &quote_request).await {
                     Ok(quote) => {
                         println!("✅");
                         println!("     Can fulfill: {}", quote.can_fulfill);
                         println!("     Price: ${}/GB/month", quote.price_per_gb_month);
                         println!("     Total cost: ${}/month", quote.total_monthly_cost);
-                        println!("     Available capacity: {:.2} GB", 
-                                quote.available_capacity as f64 / (1024.0 * 1024.0 * 1024.0));
+                        println!(
+                            "     Available capacity: {:.2} GB",
+                            quote.available_capacity as f64 / (1024.0 * 1024.0 * 1024.0)
+                        );
                         println!("     Start time: {} hours", quote.estimated_start_time);
-                        println!("     Valid until: {}", quote.valid_until.format("%Y-%m-%d %H:%M:%S"));
+                        println!(
+                            "     Valid until: {}",
+                            quote.valid_until.format("%Y-%m-%d %H:%M:%S")
+                        );
                     }
                     Err(e) => {
                         println!("❌ {}", e);

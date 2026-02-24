@@ -6,13 +6,11 @@
 //! - Quote aggregation from multiple providers
 //! - Health monitoring and registry management
 
-use carbide_core::{
-    network::*,
-    Provider, ProviderTier, Region, ContentHash
-};
-use carbide_discovery::{DiscoveryService, DiscoveryConfig};
-use rust_decimal::Decimal;
 use std::time::Duration;
+
+use carbide_core::{network::*, ContentHash, Provider, ProviderTier, Region};
+use carbide_discovery::{DiscoveryConfig, DiscoveryService};
+use rust_decimal::Decimal;
 use tokio::time::sleep;
 
 #[tokio::main]
@@ -34,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let discovery_service = DiscoveryService::new(discovery_config);
-    
+
     // Start discovery service in background
     let discovery_handle = tokio::spawn(async move {
         if let Err(e) = discovery_service.start().await {
@@ -44,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for discovery service to start
     sleep(Duration::from_secs(2)).await;
-    
+
     println!("✅ Discovery service running on http://127.0.0.1:9090");
 
     // 2. Register multiple test providers
@@ -59,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Region::NorthAmerica,
             "http://provider1.example.com".to_string(),
             500 * 1024 * 1024 * 1024, // 500GB
-            Decimal::new(2, 3), // $0.002/GB/month
+            Decimal::new(2, 3),       // $0.002/GB/month
         ),
         Provider::new(
             "EuroCloud Pro".to_string(),
@@ -67,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Region::Europe,
             "http://provider2.example.com".to_string(),
             2 * 1024 * 1024 * 1024 * 1024, // 2TB
-            Decimal::new(4, 3), // $0.004/GB/month
+            Decimal::new(4, 3),            // $0.004/GB/month
         ),
         Provider::new(
             "Asia DataCenter".to_string(),
@@ -75,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Region::Asia,
             "http://provider3.example.com".to_string(),
             10 * 1024 * 1024 * 1024 * 1024, // 10TB
-            Decimal::new(6, 3), // $0.006/GB/month
+            Decimal::new(6, 3),             // $0.006/GB/month
         ),
         Provider::new(
             "Global CDN Network".to_string(),
@@ -83,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Region::NorthAmerica,
             "http://provider4.example.com".to_string(),
             50 * 1024 * 1024 * 1024 * 1024, // 50TB
-            Decimal::new(10, 3), // $0.010/GB/month
+            Decimal::new(10, 3),            // $0.010/GB/month
         ),
         Provider::new(
             "Home Storage EU".to_string(),
@@ -91,14 +89,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Region::Europe,
             "http://provider5.example.com".to_string(),
             800 * 1024 * 1024 * 1024, // 800GB
-            Decimal::new(2, 3), // $0.002/GB/month
+            Decimal::new(2, 3),       // $0.002/GB/month
         ),
     ];
 
     for (i, provider) in test_providers.iter().enumerate() {
-        println!("   {}. Registering: {} ({:?}, {:?})", 
-                i + 1, provider.name, provider.tier, provider.region);
-        
+        println!(
+            "   {}. Registering: {} ({:?}, {:?})",
+            i + 1,
+            provider.name,
+            provider.tier,
+            provider.region
+        );
+
         let announcement = ProviderAnnouncement {
             provider: provider.clone(),
             endpoint: provider.endpoint.clone(),
@@ -115,7 +118,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if register_response.status().is_success() {
             println!("      ✅ Registered successfully");
         } else {
-            println!("      ❌ Registration failed: {}", register_response.status());
+            println!(
+                "      ❌ Registration failed: {}",
+                register_response.status()
+            );
         }
     }
 
@@ -128,29 +134,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if stats_response.status().is_success() {
         let stats: serde_json::Value = stats_response.json().await?;
-        println!("   Total Providers: {}", stats["total_providers"].as_u64().unwrap_or(0));
-        println!("   Online Providers: {}", stats["online_providers"].as_u64().unwrap_or(0));
-        
+        println!(
+            "   Total Providers: {}",
+            stats["total_providers"].as_u64().unwrap_or(0)
+        );
+        println!(
+            "   Online Providers: {}",
+            stats["online_providers"].as_u64().unwrap_or(0)
+        );
+
         if let Some(total_capacity) = stats["total_capacity_bytes"].as_u64() {
-            println!("   Total Capacity: {:.2} TB", 
-                    total_capacity as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0));
+            println!(
+                "   Total Capacity: {:.2} TB",
+                total_capacity as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0)
+            );
         }
-        
+
         if let Some(available_capacity) = stats["available_capacity_bytes"].as_u64() {
-            println!("   Available Capacity: {:.2} TB", 
-                    available_capacity as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0));
+            println!(
+                "   Available Capacity: {:.2} TB",
+                available_capacity as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0)
+            );
         }
-        
+
         if let Some(avg_price) = stats["average_price_per_gb"].as_str() {
             println!("   Average Price: ${}/GB/month", avg_price);
         }
     } else {
-        println!("   ❌ Failed to get statistics: {}", stats_response.status());
+        println!(
+            "   ❌ Failed to get statistics: {}",
+            stats_response.status()
+        );
     }
 
     // 4. Test provider discovery and filtering
     println!("\n🔍 Provider Discovery Tests:");
-    
+
     // Test 1: List all providers
     println!("   1. All Providers:");
     let all_providers_response = client
@@ -169,8 +188,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     provider["region"].as_str(),
                     provider["price_per_gb_month"].as_str(),
                 ) {
-                    println!("        • {} ({}, {}) - ${}/GB/month", 
-                            name, tier, region, price);
+                    println!(
+                        "        • {} ({}, {}) - ${}/GB/month",
+                        name, tier, region, price
+                    );
                 }
             }
         }
@@ -179,7 +200,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Filter by region
     println!("\n   2. North American Providers:");
     let na_providers_response = client
-        .get(&format!("{}/api/v1/providers?region=northamerica", base_url))
+        .get(&format!(
+            "{}/api/v1/providers?region=northamerica",
+            base_url
+        ))
         .send()
         .await?;
 
@@ -235,21 +259,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if quotes_response.status().is_success() {
         let quotes: Vec<serde_json::Value> = quotes_response.json().await?;
-        
+
         if quotes.is_empty() {
             println!("   ℹ️ No quotes returned (providers are mock endpoints)");
             println!("   💡 In a real deployment, providers would respond with quotes");
         } else {
             println!("   📋 Received {} quotes:", quotes.len());
             for (i, quote) in quotes.iter().enumerate() {
-                println!("      {}. Provider: {}", i + 1, 
-                        quote["provider_id"].as_str().unwrap_or("Unknown"));
-                println!("         Price: ${}/GB/month", 
-                        quote["price_per_gb_month"].as_str().unwrap_or("?"));
-                println!("         Total Cost: ${}/month", 
-                        quote["total_monthly_cost"].as_str().unwrap_or("?"));
-                println!("         Can Fulfill: {}", 
-                        quote["can_fulfill"].as_bool().unwrap_or(false));
+                println!(
+                    "      {}. Provider: {}",
+                    i + 1,
+                    quote["provider_id"].as_str().unwrap_or("Unknown")
+                );
+                println!(
+                    "         Price: ${}/GB/month",
+                    quote["price_per_gb_month"].as_str().unwrap_or("?")
+                );
+                println!(
+                    "         Total Cost: ${}/month",
+                    quote["total_monthly_cost"].as_str().unwrap_or("?")
+                );
+                println!(
+                    "         Can Fulfill: {}",
+                    quote["can_fulfill"].as_bool().unwrap_or(false)
+                );
             }
         }
     } else {
@@ -258,7 +291,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 6. Test individual provider lookup
     println!("\n🔎 Individual Provider Lookup:");
-    
+
     // Get a provider ID from the registry
     let providers_response = client
         .get(&format!("{}/api/v1/providers?limit=1", base_url))
@@ -271,7 +304,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(first_provider) = providers.first() {
                 if let Some(provider_id) = first_provider["id"].as_str() {
                     println!("   Looking up provider: {}", provider_id);
-                    
+
                     let lookup_response = client
                         .get(&format!("{}/api/v1/providers/{}", base_url, provider_id))
                         .send()
@@ -280,16 +313,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if lookup_response.status().is_success() {
                         let provider_details: serde_json::Value = lookup_response.json().await?;
                         println!("   ✅ Provider Details:");
-                        println!("      Name: {}", 
-                                provider_details["provider"]["name"].as_str().unwrap_or("Unknown"));
-                        println!("      Tier: {}", 
-                                provider_details["provider"]["tier"].as_str().unwrap_or("Unknown"));
-                        println!("      Region: {}", 
-                                provider_details["provider"]["region"].as_str().unwrap_or("Unknown"));
-                        println!("      Registered: {}", 
-                                provider_details["registered_at"].as_str().unwrap_or("Unknown"));
-                        println!("      Health Status: {}", 
-                                provider_details["health_status"].as_str().unwrap_or("Unknown"));
+                        println!(
+                            "      Name: {}",
+                            provider_details["provider"]["name"]
+                                .as_str()
+                                .unwrap_or("Unknown")
+                        );
+                        println!(
+                            "      Tier: {}",
+                            provider_details["provider"]["tier"]
+                                .as_str()
+                                .unwrap_or("Unknown")
+                        );
+                        println!(
+                            "      Region: {}",
+                            provider_details["provider"]["region"]
+                                .as_str()
+                                .unwrap_or("Unknown")
+                        );
+                        println!(
+                            "      Registered: {}",
+                            provider_details["registered_at"]
+                                .as_str()
+                                .unwrap_or("Unknown")
+                        );
+                        println!(
+                            "      Health Status: {}",
+                            provider_details["health_status"]
+                                .as_str()
+                                .unwrap_or("Unknown")
+                        );
                     } else {
                         println!("   ❌ Lookup failed: {}", lookup_response.status());
                     }
@@ -308,8 +361,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if health_response.status().is_success() {
         let health: serde_json::Value = health_response.json().await?;
         println!("   ✅ Discovery Service is healthy");
-        println!("   Status: {}", health["status"].as_str().unwrap_or("Unknown"));
-        println!("   Version: {}", health["version"].as_str().unwrap_or("Unknown"));
+        println!(
+            "   Status: {}",
+            health["status"].as_str().unwrap_or("Unknown")
+        );
+        println!(
+            "   Version: {}",
+            health["version"].as_str().unwrap_or("Unknown")
+        );
     } else {
         println!("   ❌ Health check failed: {}", health_response.status());
     }
@@ -323,7 +382,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • Multi-provider quote aggregation (architecture)");
     println!("  • Provider health monitoring and registry management");
     println!("  • RESTful API for marketplace interactions");
-    
+
     println!("\n💡 Key Features Implemented:");
     println!("  • Centralized provider registry with DashMap for performance");
     println!("  • Automatic health checking and provider timeout handling");
@@ -334,6 +393,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Shutdown
     discovery_handle.abort();
-    
+
     Ok(())
 }

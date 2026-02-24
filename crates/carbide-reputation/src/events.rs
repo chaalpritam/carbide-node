@@ -179,7 +179,7 @@ pub enum FeedbackCategory {
 }
 
 /// Event context information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EventContext {
     /// Associated contract ID
     pub contract_id: Option<uuid::Uuid>,
@@ -197,11 +197,7 @@ pub struct EventContext {
 
 impl ReputationEvent {
     /// Create a new reputation event
-    pub fn new(
-        provider_id: ProviderId,
-        event_type: EventType,
-        severity: EventSeverity,
-    ) -> Self {
+    pub fn new(provider_id: ProviderId, event_type: EventType, severity: EventSeverity) -> Self {
         Self {
             id: uuid::Uuid::new_v4(),
             provider_id,
@@ -304,10 +300,16 @@ impl ReputationEvent {
     /// Extract response time from event if available
     pub fn response_time_ms(&self) -> Option<u64> {
         match &self.event_type {
-            EventType::ProofSuccess { response_time_ms, .. } => Some(*response_time_ms),
-            EventType::HealthCheck { response_time_ms, .. } => Some(*response_time_ms),
+            EventType::ProofSuccess {
+                response_time_ms, ..
+            } => Some(*response_time_ms),
+            EventType::HealthCheck {
+                response_time_ms, ..
+            } => Some(*response_time_ms),
             EventType::UploadSuccess { upload_time_ms, .. } => Some(*upload_time_ms),
-            EventType::DownloadSuccess { download_time_ms, .. } => Some(*download_time_ms),
+            EventType::DownloadSuccess {
+                download_time_ms, ..
+            } => Some(*download_time_ms),
             _ => None,
         }
     }
@@ -319,25 +321,29 @@ impl ReputationEvent {
             EventType::DataCorruption { .. } => 3.0,
             EventType::ContractViolated { .. } => 2.5,
             EventType::SuspiciousActivity { .. } => 2.0,
-            
+
             // Important events
             EventType::ProofFailure { .. } => 1.5,
             EventType::ContractCompleted { .. } => 1.5,
             EventType::UploadFailure { .. } => 1.2,
             EventType::DownloadFailure { .. } => 1.2,
-            
+
             // Standard events
             EventType::ProofSuccess { .. } => 1.0,
             EventType::UploadSuccess { .. } => 1.0,
             EventType::DownloadSuccess { .. } => 1.0,
             EventType::HealthCheck { .. } => 1.0,
-            
+
             // Lower weight events
             EventType::Online => 0.8,
             EventType::Offline => 1.2,
-            EventType::MaintenanceWindow { announced: true, .. } => 0.5,
-            EventType::MaintenanceWindow { announced: false, .. } => 1.0,
-            
+            EventType::MaintenanceWindow {
+                announced: true, ..
+            } => 0.5,
+            EventType::MaintenanceWindow {
+                announced: false, ..
+            } => 1.0,
+
             // Community feedback weight varies by category
             EventType::CommunityFeedback { category, .. } => match category {
                 FeedbackCategory::ServiceQuality => 1.2,
@@ -346,21 +352,8 @@ impl ReputationEvent {
                 FeedbackCategory::Support => 0.8,
                 FeedbackCategory::Value => 0.6,
             },
-            
-            _ => 1.0,
-        }
-    }
-}
 
-impl Default for EventContext {
-    fn default() -> Self {
-        Self {
-            contract_id: None,
-            file_id: None,
-            client_id: None,
-            region: None,
-            tier: None,
-            tags: Vec::new(),
+            _ => 1.0,
         }
     }
 }
@@ -429,11 +422,7 @@ mod tests {
     #[test]
     fn test_event_creation() {
         let provider_id = uuid::Uuid::new_v4();
-        let event = ReputationEvent::new(
-            provider_id,
-            EventType::Online,
-            EventSeverity::Positive,
-        );
+        let event = ReputationEvent::new(provider_id, EventType::Online, EventSeverity::Positive);
 
         assert_eq!(event.provider_id, provider_id);
         assert!(matches!(event.event_type, EventType::Online));
@@ -443,11 +432,14 @@ mod tests {
     #[test]
     fn test_impact_score() {
         let provider_id = uuid::Uuid::new_v4();
-        
+
         // Positive proof success
         let event = ReputationEvent::new(
             provider_id,
-            EventType::ProofSuccess { response_time_ms: 100, chunks_proven: 5 },
+            EventType::ProofSuccess {
+                response_time_ms: 100,
+                chunks_proven: 5,
+            },
             EventSeverity::Positive,
         );
         assert_eq!(event.impact_score(), 1.0);
@@ -455,7 +447,11 @@ mod tests {
         // Data corruption is severely negative
         let event = ReputationEvent::new(
             provider_id,
-            EventType::DataCorruption { corrupted_files: 2, corrupted_bytes: 1024, recovered: false },
+            EventType::DataCorruption {
+                corrupted_files: 2,
+                corrupted_bytes: 1024,
+                recovered: false,
+            },
             EventSeverity::ExtremelyNegative,
         );
         assert_eq!(event.impact_score(), -4.0); // -2.0 * 2.0
@@ -464,18 +460,18 @@ mod tests {
     #[test]
     fn test_event_categorization() {
         let provider_id = uuid::Uuid::new_v4();
-        
-        let uptime_event = ReputationEvent::new(
-            provider_id,
-            EventType::Online,
-            EventSeverity::Positive,
-        );
+
+        let uptime_event =
+            ReputationEvent::new(provider_id, EventType::Online, EventSeverity::Positive);
         assert!(uptime_event.affects_uptime());
         assert!(!uptime_event.affects_data_integrity());
 
         let proof_event = ReputationEvent::new(
             provider_id,
-            EventType::ProofSuccess { response_time_ms: 100, chunks_proven: 3 },
+            EventType::ProofSuccess {
+                response_time_ms: 100,
+                chunks_proven: 3,
+            },
             EventSeverity::Positive,
         );
         assert!(proof_event.affects_data_integrity());
@@ -485,10 +481,13 @@ mod tests {
     #[test]
     fn test_event_builder() {
         let provider_id = uuid::Uuid::new_v4();
-        
+
         let event = EventBuilder::new(
             provider_id,
-            EventType::UploadSuccess { file_size: 1024, upload_time_ms: 500 }
+            EventType::UploadSuccess {
+                file_size: 1024,
+                upload_time_ms: 500,
+            },
         )
         .severity(EventSeverity::Positive)
         .detail("client".to_string(), "test_client".to_string())
@@ -496,20 +495,26 @@ mod tests {
         .build();
 
         assert!(matches!(event.severity, EventSeverity::Positive));
-        assert_eq!(event.details.get("client"), Some(&"test_client".to_string()));
+        assert_eq!(
+            event.details.get("client"),
+            Some(&"test_client".to_string())
+        );
         assert_eq!(event.value, Some(1024.0));
     }
 
     #[test]
     fn test_response_time_extraction() {
         let provider_id = uuid::Uuid::new_v4();
-        
+
         let event = ReputationEvent::new(
             provider_id,
-            EventType::ProofSuccess { response_time_ms: 150, chunks_proven: 2 },
+            EventType::ProofSuccess {
+                response_time_ms: 150,
+                chunks_proven: 2,
+            },
             EventSeverity::Positive,
         );
-        
+
         assert_eq!(event.response_time_ms(), Some(150));
     }
 }

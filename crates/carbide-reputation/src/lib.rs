@@ -12,20 +12,37 @@
 
 #![deny(missing_docs)]
 #![warn(clippy::all, clippy::pedantic)]
+#![allow(
+    clippy::must_use_candidate,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::module_name_repetitions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::doc_markdown,
+    clippy::unnecessary_wraps,
+    clippy::unused_self,
+    clippy::return_self_not_must_use,
+    clippy::match_same_arms,
+    clippy::needless_pass_by_value,
+    clippy::similar_names,
+    clippy::too_many_lines
+)]
 
-pub mod tracker;
 pub mod events;
 pub mod scoring;
 pub mod storage;
-
-pub use tracker::{ReputationTracker, ReputationUpdate};
-pub use events::{ReputationEvent, EventType, EventSeverity};
-pub use scoring::{ScoringConfig, ReputationWeights};
-pub use storage::{ReputationStorage, MemoryStorage, FileStorage};
+pub mod tracker;
 
 use carbide_core::{ProviderId, ReputationScore, Result};
 use chrono::{DateTime, Utc};
+pub use events::{EventSeverity, EventType, ReputationEvent};
+pub use scoring::{ReputationWeights, ScoringConfig};
 use serde::{Deserialize, Serialize};
+pub use storage::{FileStorage, MemoryStorage, ReputationStorage};
+pub use tracker::{ReputationTracker, ReputationUpdate};
 
 /// Configuration for the reputation system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +69,7 @@ impl Default for ReputationConfig {
             min_events_for_stability: 10,
             max_event_age_days: 30,
             penalty_multiplier: rust_decimal::Decimal::new(15, 1), // 1.5x penalty
-            bonus_multiplier: rust_decimal::Decimal::new(11, 1), // 1.1x bonus
+            bonus_multiplier: rust_decimal::Decimal::new(11, 1),   // 1.1x bonus
         }
     }
 }
@@ -224,8 +241,10 @@ impl ReputationSystemBuilder {
 
     /// Build the reputation tracker
     pub fn build(self) -> Result<ReputationTracker> {
-        let storage = self.storage.unwrap_or_else(|| Box::new(MemoryStorage::new()));
-        Ok(ReputationTracker::new(self.config, storage)?)
+        let storage = self
+            .storage
+            .unwrap_or_else(|| Box::new(MemoryStorage::new()));
+        ReputationTracker::new(self.config, storage)
     }
 }
 
@@ -237,9 +256,10 @@ impl Default for ReputationSystemBuilder {
 
 /// Utility functions for reputation calculations
 pub mod utils {
-    use super::*;
-    use rust_decimal::Decimal;
     use num_traits::ToPrimitive;
+    use rust_decimal::Decimal;
+
+    use super::{DateTime, ReputationTrend, Utc};
 
     /// Calculate time decay factor based on event age
     pub fn calculate_time_decay(
@@ -251,7 +271,7 @@ pub mod utils {
         if age_days <= 0 {
             return Decimal::ONE;
         }
-        
+
         // Apply exponential decay (simplified approximation)
         let mut result = Decimal::ONE;
         for _ in 0..age_days {
@@ -274,17 +294,21 @@ pub mod utils {
     /// Calculate moving average for trend analysis
     pub fn calculate_moving_average(scores: &[Decimal], window_size: usize) -> Vec<Decimal> {
         let mut averages = Vec::new();
-        
+
         for i in 0..scores.len() {
-            let start = if i >= window_size { i - window_size + 1 } else { 0 };
+            let start = if i >= window_size {
+                i - window_size + 1
+            } else {
+                0
+            };
             let end = i + 1;
             let window = &scores[start..end];
-            
+
             let sum: Decimal = window.iter().sum();
             let avg = sum / Decimal::new(window.len() as i64, 0);
             averages.push(avg);
         }
-        
+
         averages
     }
 
@@ -297,7 +321,10 @@ pub mod utils {
         // Calculate linear regression slope
         let n = scores.len() as f64;
         let x_sum: f64 = (0..scores.len()).sum::<usize>() as f64;
-        let y_sum = scores.iter().map(|s| s.to_f64().unwrap_or(0.0)).sum::<f64>();
+        let y_sum = scores
+            .iter()
+            .map(|s| s.to_f64().unwrap_or(0.0))
+            .sum::<f64>();
         let xy_sum = scores
             .iter()
             .enumerate()
@@ -306,14 +333,18 @@ pub mod utils {
         let x2_sum: f64 = (0..scores.len()).map(|i| (i * i) as f64).sum();
 
         let slope = (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum * x_sum);
-        
+
         let slope_decimal = Decimal::from_f64_retain(slope).unwrap_or(Decimal::ZERO);
         let threshold = Decimal::new(1, 3); // 0.001
 
         if slope_decimal > threshold {
-            ReputationTrend::Improving { rate: slope_decimal }
+            ReputationTrend::Improving {
+                rate: slope_decimal,
+            }
         } else if slope_decimal < -threshold {
-            ReputationTrend::Declining { rate: slope_decimal.abs() }
+            ReputationTrend::Declining {
+                rate: slope_decimal.abs(),
+            }
         } else {
             // Calculate variance for stability
             let mean = Decimal::from_f64_retain(y_sum / n).unwrap_or(Decimal::ZERO);
@@ -325,7 +356,7 @@ pub mod utils {
                 })
                 .sum::<Decimal>();
             let variance = variance_sum / Decimal::new(scores.len() as i64, 0);
-            
+
             ReputationTrend::Stable { variance }
         }
     }
@@ -339,7 +370,7 @@ mod tests {
     #[test]
     fn test_reputation_config_default() {
         let config = ReputationConfig::default();
-        
+
         assert_eq!(config.min_events_for_stability, 10);
         assert_eq!(config.max_event_age_days, 30);
         assert!(config.time_decay_factor < rust_decimal::Decimal::ONE);
@@ -350,22 +381,31 @@ mod tests {
         let now = Utc::now();
         let one_day_ago = now - chrono::Duration::days(1);
         let decay_factor = rust_decimal::Decimal::new(995, 3); // 0.995
-        
+
         let decay = calculate_time_decay(one_day_ago, now, decay_factor);
         assert_eq!(decay, decay_factor);
     }
 
     #[test]
     fn test_score_normalization() {
-        assert_eq!(normalize_score(rust_decimal::Decimal::new(15, 1)), rust_decimal::Decimal::ONE);
-        assert_eq!(normalize_score(rust_decimal::Decimal::new(-5, 1)), rust_decimal::Decimal::ZERO);
-        assert_eq!(normalize_score(rust_decimal::Decimal::new(5, 1)), rust_decimal::Decimal::new(5, 1));
+        assert_eq!(
+            normalize_score(rust_decimal::Decimal::new(15, 1)),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(
+            normalize_score(rust_decimal::Decimal::new(-5, 1)),
+            rust_decimal::Decimal::ZERO
+        );
+        assert_eq!(
+            normalize_score(rust_decimal::Decimal::new(5, 1)),
+            rust_decimal::Decimal::new(5, 1)
+        );
     }
 
     #[test]
     fn test_trend_analysis() {
         use rust_decimal::Decimal;
-        
+
         // Improving trend
         let improving_scores = vec![
             Decimal::new(3, 1), // 0.3
@@ -374,12 +414,12 @@ mod tests {
             Decimal::new(6, 1), // 0.6
             Decimal::new(7, 1), // 0.7
         ];
-        
+
         match analyze_trend(&improving_scores) {
             ReputationTrend::Improving { rate } => assert!(rate > Decimal::ZERO),
             _ => panic!("Expected improving trend"),
         }
-        
+
         // Insufficient data
         let insufficient_scores = vec![Decimal::new(5, 1)];
         match analyze_trend(&insufficient_scores) {
@@ -395,7 +435,7 @@ mod tests {
             .with_weights(weights)
             .with_min_events(20)
             .with_time_decay(rust_decimal::Decimal::new(99, 2));
-            
+
         // Builder should be configured correctly
         assert_eq!(builder.config.min_events_for_stability, 20);
     }

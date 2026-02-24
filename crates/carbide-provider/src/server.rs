@@ -6,32 +6,20 @@
 //! - Respond to proof-of-storage challenges
 //! - Provide health/status information
 
+use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Duration};
+
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Router,
 };
-use carbide_core::{
-    network::*,
-    *,
-};
+use carbide_core::{network::*, *};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer,
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::info;
 
 /// Provider server configuration
@@ -122,10 +110,12 @@ impl ProviderServer {
         let storage_dir = storage_path.join(provider.id.to_string());
 
         // Create storage directory if it doesn't exist
-        fs::create_dir_all(&storage_dir)
-            .map_err(|e| CarbideError::Internal(
-                format!("Failed to create storage directory {:?}: {}", storage_dir, e)
-            ))?;
+        fs::create_dir_all(&storage_dir).map_err(|e| {
+            CarbideError::Internal(format!(
+                "Failed to create storage directory {}: {e}",
+                storage_dir.display()
+            ))
+        })?;
 
         let stats = StorageStats {
             total_files: 0,
@@ -146,44 +136,44 @@ impl ProviderServer {
             storage_dir,
         })
     }
-    
+
     /// Get the file path for storing a file
     fn get_file_path(&self, file_id: &FileId) -> PathBuf {
         self.storage_dir.join(format!("{}.dat", file_id.to_hex()))
     }
-    
+
     /// Write file data to disk
     async fn write_file_to_disk(&self, file_id: &FileId, data: &[u8]) -> Result<()> {
         let file_path = self.get_file_path(file_id);
-        
-        tokio::fs::write(&file_path, data).await
-            .map_err(|e| CarbideError::Internal(
-                format!("Failed to write file {:?}: {}", file_path, e)
-            ))?;
-            
+
+        tokio::fs::write(&file_path, data).await.map_err(|e| {
+            CarbideError::Internal(format!("Failed to write file {}: {e}", file_path.display()))
+        })?;
+
         info!("💾 File {} written to disk ({} bytes)", file_id, data.len());
         Ok(())
     }
-    
+
     /// Read file data from disk
     async fn read_file_from_disk(&self, file_id: &FileId) -> Result<Vec<u8>> {
         let file_path = self.get_file_path(file_id);
-        
-        tokio::fs::read(&file_path).await
-            .map_err(|e| CarbideError::Internal(
-                format!("Failed to read file {:?}: {}", file_path, e)
-            ))
+
+        tokio::fs::read(&file_path).await.map_err(|e| {
+            CarbideError::Internal(format!("Failed to read file {}: {e}", file_path.display()))
+        })
     }
-    
+
     /// Delete file from disk
     async fn delete_file_from_disk(&self, file_id: &FileId) -> Result<()> {
         let file_path = self.get_file_path(file_id);
-        
-        tokio::fs::remove_file(&file_path).await
-            .map_err(|e| CarbideError::Internal(
-                format!("Failed to delete file {:?}: {}", file_path, e)
-            ))?;
-            
+
+        tokio::fs::remove_file(&file_path).await.map_err(|e| {
+            CarbideError::Internal(format!(
+                "Failed to delete file {}: {e}",
+                file_path.display()
+            ))
+        })?;
+
         info!("🗑️ File {} deleted from disk", file_id);
         Ok(())
     }
@@ -197,19 +187,23 @@ impl ProviderServer {
         info!("   Provider ID: {}", self.provider.id);
         info!("   Provider Name: {}", self.provider.name);
         info!("   Price: ${}/GB/month", self.provider.price_per_gb_month);
-        info!("   Available Capacity: {:.2} GB", 
-              self.provider.available_capacity as f64 / (1024.0 * 1024.0 * 1024.0));
+        info!(
+            "   Available Capacity: {:.2} GB",
+            self.provider.available_capacity as f64 / (1024.0 * 1024.0 * 1024.0)
+        );
 
         // Create the router with all endpoints
         let app = self.create_router();
 
         // Create TCP listener
-        let listener = TcpListener::bind(&addr).await
-            .map_err(|e| CarbideError::Internal(format!("Failed to bind to {}: {}", addr, e)))?;
+        let listener = TcpListener::bind(&addr)
+            .await
+            .map_err(|e| CarbideError::Internal(format!("Failed to bind to {addr}: {e}")))?;
 
         // Start the server
-        axum::serve(listener, app).await
-            .map_err(|e| CarbideError::Internal(format!("Server error: {}", e)))?;
+        axum::serve(listener, app)
+            .await
+            .map_err(|e| CarbideError::Internal(format!("Server error: {e}")))?;
 
         Ok(())
     }
@@ -225,21 +219,17 @@ impl ProviderServer {
             // Health and status endpoints
             .route(ApiEndpoints::HEALTH_CHECK, get(health_check))
             .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status))
-
             // File storage endpoints
             .route(ApiEndpoints::FILE_STORE, post(store_file_request))
             .route(ApiEndpoints::FILE_RETRIEVE, get(retrieve_file))
             .route(ApiEndpoints::FILE_DELETE, delete(delete_file))
             .route(ApiEndpoints::FILE_UPLOAD, post(upload_file))
             .route(ApiEndpoints::FILE_DOWNLOAD, get(download_file))
-
             // Marketplace endpoints
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
-
             // Proof of storage endpoints
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
-
             .with_state(server_state)
             .layer(
                 ServiceBuilder::new()
@@ -250,7 +240,7 @@ impl ProviderServer {
                         CorsLayer::permissive()
                     } else {
                         CorsLayer::new()
-                    })
+                    }),
             )
     }
 }
@@ -260,12 +250,10 @@ impl ProviderServer {
 // ============================================================================
 
 /// Health check endpoint
-async fn health_check(
-    State(server): State<Arc<ProviderServer>>,
-) -> Json<NetworkMessage> {
+async fn health_check(State(server): State<Arc<ProviderServer>>) -> Json<NetworkMessage> {
     let mut stats = server.stats.write().await;
     stats.last_health_check = Utc::now();
-    
+
     // Calculate actual load from storage utilization
     let load = if stats.total_capacity > 0 {
         (stats.total_bytes_stored as f64 / stats.total_capacity as f64) as f32
@@ -282,9 +270,7 @@ async fn health_check(
         reputation: Some(server.provider.reputation.overall),
     };
 
-    let message = NetworkMessage::new(
-        MessageType::HealthCheckResponse(health_response)
-    );
+    let message = NetworkMessage::new(MessageType::HealthCheckResponse(health_response));
 
     Json(message)
 }
@@ -294,7 +280,7 @@ async fn provider_status(
     State(server): State<Arc<ProviderServer>>,
 ) -> Json<ProviderStatusResponse> {
     let stats = server.stats.read().await;
-    
+
     Json(ProviderStatusResponse {
         provider: server.provider.clone(),
         stats: stats.clone(),
@@ -311,11 +297,11 @@ async fn store_file_request(
     match message.message_type {
         MessageType::StoreFileRequest(ref request) => {
             info!("Received store file request for {}", request.file_id);
-            
+
             // Check if we can accept the file
             let stats = server.stats.read().await;
-            
-            let can_store = request.file_size <= stats.available_space 
+
+            let can_store = request.file_size <= stats.available_space
                 && server.provider.price_per_gb_month <= request.max_price;
 
             let response = if can_store {
@@ -331,13 +317,17 @@ async fn store_file_request(
                     status: ContractStatus::Active,
                     last_proof_at: None,
                 };
-                
+
                 // Store the contract
-                server.contracts.write().await.insert(contract.id, contract.clone());
+                server
+                    .contracts
+                    .write()
+                    .await
+                    .insert(contract.id, contract.clone());
 
                 // Generate upload URL using the provider's public endpoint
-                let upload_url = format!("{}{}",
-                    server.provider.endpoint, ApiEndpoints::FILE_UPLOAD);
+                let upload_url =
+                    format!("{}{}", server.provider.endpoint, ApiEndpoints::FILE_UPLOAD);
                 let upload_token = contract.id.to_string();
 
                 StoreFileResponse {
@@ -366,10 +356,8 @@ async fn store_file_request(
                 }
             };
 
-            let response_message = NetworkMessage::new_response(
-                MessageType::StoreFileResponse(response),
-                &message,
-            );
+            let response_message =
+                NetworkMessage::new_response(MessageType::StoreFileResponse(response), &message);
 
             Ok(Json(response_message))
         }
@@ -389,9 +377,13 @@ async fn upload_file(
     let mut upload_token = None;
 
     // Process multipart form data
-    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
         let name = field.name().unwrap_or("").to_string();
-        
+
         match name.as_str() {
             "file" => {
                 let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -415,13 +407,15 @@ async fn upload_file(
     // Validate upload token against active contracts
     let contract_id = Uuid::parse_str(&token).map_err(|_| StatusCode::UNAUTHORIZED)?;
     let contracts = server.contracts.read().await;
-    let contract = contracts.get(&contract_id).ok_or(StatusCode::UNAUTHORIZED)?;
-    
+    let contract = contracts
+        .get(&contract_id)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
     // Verify the file_id matches the contract
     if contract.file_id != file_id {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     // Write file to disk
     if let Err(e) = server.write_file_to_disk(&file_id, &file_data).await {
         tracing::error!("Failed to write file to disk: {}", e);
@@ -441,13 +435,17 @@ async fn upload_file(
 
     // Update server state
     server.files.write().await.insert(file_id, stored_file);
-    
+
     let mut stats = server.stats.write().await;
     stats.total_files += 1;
     stats.total_bytes_stored += file_data.len() as u64;
     stats.available_space = stats.available_space.saturating_sub(file_data.len() as u64);
 
-    info!("✅ File {} uploaded successfully ({} bytes)", file_id, file_data.len());
+    info!(
+        "✅ File {} uploaded successfully ({} bytes)",
+        file_id,
+        file_data.len()
+    );
 
     Ok(Json(UploadResponse {
         success: true,
@@ -466,21 +464,21 @@ async fn retrieve_file(
 
     let file_hash = ContentHash::from_hex(&file_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let files = server.files.read().await;
-    
+
     if let Some(stored_file) = files.get(&file_hash) {
         let response = RetrieveFileResponse {
             file_id: stored_file.file_id,
             data: None, // For large files, provide download URL instead
-            download_url: Some(format!("{}/api/v1/download/{}",
-                server.provider.endpoint, file_id)),
+            download_url: Some(format!(
+                "{}/api/v1/download/{}",
+                server.provider.endpoint, file_id
+            )),
             content_type: stored_file.content_type.clone(),
             size: stored_file.size,
             last_modified: stored_file.stored_at,
         };
 
-        let message = NetworkMessage::new(
-            MessageType::RetrieveFileResponse(response)
-        );
+        let message = NetworkMessage::new(MessageType::RetrieveFileResponse(response));
 
         Ok(Json(message))
     } else {
@@ -497,14 +495,14 @@ async fn delete_file(
 
     let file_hash = ContentHash::from_hex(&file_id).map_err(|_| StatusCode::BAD_REQUEST)?;
     let mut files = server.files.write().await;
-    
+
     if let Some(stored_file) = files.remove(&file_hash) {
         // Delete file from disk
         if let Err(e) = server.delete_file_from_disk(&file_hash).await {
             tracing::error!("Failed to delete file from disk: {}", e);
             // Continue with removal from memory even if disk deletion fails
         }
-        
+
         // Update statistics
         let mut stats = server.stats.write().await;
         stats.total_files = stats.total_files.saturating_sub(1);
@@ -517,11 +515,12 @@ async fn delete_file(
             freed_bytes: Some(stored_file.size),
         };
 
-        let message = NetworkMessage::new(
-            MessageType::DeleteFileResponse(response)
-        );
+        let message = NetworkMessage::new(MessageType::DeleteFileResponse(response));
 
-        info!("✅ File {} deleted ({} bytes freed)", file_id, stored_file.size);
+        info!(
+            "✅ File {} deleted ({} bytes freed)",
+            file_id, stored_file.size
+        );
         Ok(Json(message))
     } else {
         Err(StatusCode::NOT_FOUND)
@@ -534,15 +533,15 @@ async fn download_file(
     State(server): State<Arc<ProviderServer>>,
 ) -> std::result::Result<Vec<u8>, StatusCode> {
     info!("Downloading file: {}", file_id);
-    
+
     let file_hash = ContentHash::from_hex(&file_id).map_err(|_| StatusCode::BAD_REQUEST)?;
-    
+
     // Check if file exists in our records
     let files = server.files.read().await;
     if !files.contains_key(&file_hash) {
         return Err(StatusCode::NOT_FOUND);
     }
-    
+
     // Read file data from disk
     match server.read_file_from_disk(&file_hash).await {
         Ok(data) => {
@@ -564,11 +563,11 @@ async fn storage_quote(
     match message.message_type {
         MessageType::StorageQuoteRequest(ref request) => {
             let stats = server.stats.read().await;
-            
+
             let can_fulfill = request.file_size <= stats.available_space;
-            let total_monthly_cost = server.provider.price_per_gb_month 
+            let total_monthly_cost = server.provider.price_per_gb_month
                 * rust_decimal::Decimal::new(request.file_size as i64, 9) // Convert bytes to GB
-                * rust_decimal::Decimal::new(request.replication_factor as i64, 0);
+                * rust_decimal::Decimal::new(i64::from(request.replication_factor), 0);
 
             let response = StorageQuoteResponse {
                 provider_id: server.provider.id,
@@ -576,14 +575,13 @@ async fn storage_quote(
                 total_monthly_cost,
                 can_fulfill,
                 available_capacity: stats.available_space,
-                estimated_start_time: if can_fulfill { 1 } else { 24 }, // 1 hour if can fulfill, 24 if not
+                estimated_start_time: if can_fulfill { 1 } else { 24 }, /* 1 hour if can fulfill,
+                                                                         * 24 if not */
                 valid_until: Utc::now() + chrono::Duration::hours(1),
             };
 
-            let response_message = NetworkMessage::new_response(
-                MessageType::StorageQuoteResponse(response),
-                &message,
-            );
+            let response_message =
+                NetworkMessage::new_response(MessageType::StorageQuoteResponse(response), &message);
 
             Ok(Json(response_message))
         }
@@ -597,85 +595,76 @@ async fn proof_challenge(
     Json(message): Json<NetworkMessage>,
 ) -> Json<NetworkMessage> {
     info!("Received proof-of-storage challenge");
-    
-    match message.message_type {
-        MessageType::StorageChallenge(ref challenge) => {
-            let files = server.files.read().await;
-            
-            // Check if we have the file being challenged
-            if let Some(_stored_file) = files.get(&challenge.file_hash) {
-                // Verify the challenge is still valid
-                if challenge.expires_at < Utc::now() {
-                    info!("⏰ Challenge expired: {}", challenge.challenge_id);
-                    // Return error response
-                    let error_msg = ErrorMessage {
-                        code: "CHALLENGE_EXPIRED".to_string(),
-                        message: "Challenge has expired".to_string(),
-                        details: None,
-                    };
-                    return Json(NetworkMessage::new_response(
-                        MessageType::Error(error_msg),
-                        &message,
-                    ));
-                }
-                
-                // Generate proof for the requested chunks
-                let mut merkle_proofs = Vec::new();
-                for &chunk_index in &challenge.chunk_indices {
-                    // For now, create a simple proof (in production this would use actual Merkle trees)
-                    let chunk_proof = ChunkProofData {
-                        chunk_index,
-                        chunk_hash: ContentHash::from_data(&format!("chunk_{}", chunk_index).as_bytes()),
-                        merkle_path: vec![
-                            ContentHash::from_data(b"merkle_sibling_1"),
-                            ContentHash::from_data(b"merkle_sibling_2"),
-                        ],
-                        chunk_data: None, // Don't include actual data for large files
-                    };
-                    merkle_proofs.push(chunk_proof);
-                }
-                
-                // Compute response hash
-                let response_data = format!("{}:{}:{:?}", 
-                    challenge.challenge_id, 
-                    challenge.file_hash.to_hex(),
-                    challenge.chunk_indices);
-                let response_hash = ContentHash::from_data(response_data.as_bytes());
-                
-                let response = StorageProofData {
-                    challenge_id: challenge.challenge_id.clone(),
-                    merkle_proofs,
-                    response_hash,
-                    signature: vec![0u8; 64], // TODO: Real signature with provider private key
-                    generated_at: Utc::now(),
-                };
 
-                info!("✅ Generated proof for challenge {} ({} chunks)", 
-                      challenge.challenge_id, challenge.chunk_indices.len());
+    if let MessageType::StorageChallenge(ref challenge) = message.message_type {
+        let files = server.files.read().await;
 
-                Json(NetworkMessage::new_response(
-                    MessageType::StorageProof(response),
-                    &message,
-                ))
-            } else {
-                // File not found
-                info!("❌ File not found for challenge: {}", challenge.file_hash);
+        // Check if we have the file being challenged
+        if let Some(_stored_file) = files.get(&challenge.file_hash) {
+            // Verify the challenge is still valid
+            if challenge.expires_at < Utc::now() {
+                info!("⏰ Challenge expired: {}", challenge.challenge_id);
+                // Return error response
                 let error_msg = ErrorMessage {
-                    code: ErrorCodes::FILE_NOT_FOUND.to_string(),
-                    message: "File not found in storage".to_string(),
+                    code: "CHALLENGE_EXPIRED".to_string(),
+                    message: "Challenge has expired".to_string(),
                     details: None,
                 };
-                Json(NetworkMessage::new_response(
+                return Json(NetworkMessage::new_response(
                     MessageType::Error(error_msg),
                     &message,
-                ))
+                ));
             }
-        }
-        _ => {
-            // Invalid message type
+
+            // Generate proof for the requested chunks
+            let mut merkle_proofs = Vec::new();
+            for &chunk_index in &challenge.chunk_indices {
+                // For now, create a simple proof (in production this would use actual Merkle trees)
+                let chunk_proof = ChunkProofData {
+                    chunk_index,
+                    chunk_hash: ContentHash::from_data(format!("chunk_{chunk_index}").as_bytes()),
+                    merkle_path: vec![
+                        ContentHash::from_data(b"merkle_sibling_1"),
+                        ContentHash::from_data(b"merkle_sibling_2"),
+                    ],
+                    chunk_data: None, // Don't include actual data for large files
+                };
+                merkle_proofs.push(chunk_proof);
+            }
+
+            // Compute response hash
+            let response_data = format!(
+                "{}:{}:{:?}",
+                challenge.challenge_id,
+                challenge.file_hash.to_hex(),
+                challenge.chunk_indices
+            );
+            let response_hash = ContentHash::from_data(response_data.as_bytes());
+
+            let response = StorageProofData {
+                challenge_id: challenge.challenge_id.clone(),
+                merkle_proofs,
+                response_hash,
+                signature: vec![0u8; 64], // TODO: Real signature with provider private key
+                generated_at: Utc::now(),
+            };
+
+            info!(
+                "✅ Generated proof for challenge {} ({} chunks)",
+                challenge.challenge_id,
+                challenge.chunk_indices.len()
+            );
+
+            Json(NetworkMessage::new_response(
+                MessageType::StorageProof(response),
+                &message,
+            ))
+        } else {
+            // File not found
+            info!("❌ File not found for challenge: {}", challenge.file_hash);
             let error_msg = ErrorMessage {
-                code: ErrorCodes::INVALID_REQUEST.to_string(),
-                message: "Expected storage challenge message".to_string(),
+                code: ErrorCodes::FILE_NOT_FOUND.to_string(),
+                message: "File not found in storage".to_string(),
                 details: None,
             };
             Json(NetworkMessage::new_response(
@@ -683,6 +672,17 @@ async fn proof_challenge(
                 &message,
             ))
         }
+    } else {
+        // Invalid message type
+        let error_msg = ErrorMessage {
+            code: ErrorCodes::INVALID_REQUEST.to_string(),
+            message: "Expected storage challenge message".to_string(),
+            details: None,
+        };
+        Json(NetworkMessage::new_response(
+            MessageType::Error(error_msg),
+            &message,
+        ))
     }
 }
 
@@ -692,7 +692,7 @@ async fn proof_response(
     Json(_message): Json<NetworkMessage>,
 ) -> Json<VerificationResponse> {
     info!("Verifying proof-of-storage response");
-    
+
     // TODO: Implement actual proof verification
     Json(VerificationResponse {
         valid: true,
@@ -741,14 +741,15 @@ pub struct VerificationResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use carbide_core::{ProviderTier, Region};
     use rust_decimal::Decimal;
+
+    use super::*;
 
     #[test]
     fn test_server_config_default() {
         let config = ServerConfig::default();
-        
+
         assert_eq!(config.host, "0.0.0.0");
         assert_eq!(config.port, 8080);
         assert_eq!(config.max_upload_size, 100 * 1024 * 1024);

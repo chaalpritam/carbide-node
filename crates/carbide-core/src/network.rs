@@ -3,11 +3,13 @@
 //! This module defines the message formats, HTTP endpoints, and networking
 //! abstractions used for communication between clients, providers, and the marketplace.
 
-use crate::{ContentHash, FileId, ProviderId};
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
+
+use crate::{ContentHash, FileId, ProviderId};
 
 // ============================================================================
 // Core Message Types
@@ -39,7 +41,7 @@ impl NetworkMessage {
             version: "1.0".to_string(),
         }
     }
-    
+
     /// Create a response to another message
     pub fn new_response(message_type: MessageType, request: &NetworkMessage) -> Self {
         Self {
@@ -63,7 +65,7 @@ pub enum MessageType {
     ProviderListRequest(ProviderListRequest),
     /// Response with provider list
     ProviderListResponse(ProviderListResponse),
-    
+
     // File Storage Operations
     /// Request to store a file
     StoreFileRequest(StoreFileRequest),
@@ -77,25 +79,25 @@ pub enum MessageType {
     DeleteFileRequest(DeleteFileRequest),
     /// Response to delete request
     DeleteFileResponse(DeleteFileResponse),
-    
+
     // Proof of Storage
     /// Challenge for proof of storage
     StorageChallenge(StorageChallengeData),
     /// Proof response from provider
     StorageProof(StorageProofData),
-    
+
     // Health and Status
     /// Health check request
     HealthCheckRequest,
     /// Health check response
     HealthCheckResponse(HealthCheckResponse),
-    
+
     // Marketplace Operations
     /// Request storage quotes from providers
     StorageQuoteRequest(StorageQuoteRequest),
     /// Quote response from provider
     StorageQuoteResponse(StorageQuoteResponse),
-    
+
     // Error responses
     /// Error message
     Error(ErrorMessage),
@@ -407,7 +409,7 @@ impl ApiEndpoints {
     pub const PROVIDER_LIST: &'static str = "/api/v1/providers";
     /// Provider status endpoint
     pub const PROVIDER_STATUS: &'static str = "/api/v1/provider/status";
-    
+
     // File operations
     /// File storage request endpoint
     pub const FILE_STORE: &'static str = "/api/v1/files/store";
@@ -419,19 +421,19 @@ impl ApiEndpoints {
     pub const FILE_UPLOAD: &'static str = "/api/v1/upload";
     /// File download endpoint
     pub const FILE_DOWNLOAD: &'static str = "/api/v1/download";
-    
+
     // Marketplace
     /// Storage quote request endpoint
     pub const STORAGE_QUOTE: &'static str = "/api/v1/marketplace/quote";
     /// Storage contract endpoint
     pub const STORAGE_CONTRACT: &'static str = "/api/v1/marketplace/contract";
-    
+
     // Proof of storage
     /// Proof challenge endpoint
     pub const PROOF_CHALLENGE: &'static str = "/api/v1/proof/challenge";
     /// Proof response endpoint
     pub const PROOF_RESPONSE: &'static str = "/api/v1/proof/response";
-    
+
     // Health and monitoring
     /// Health check endpoint
     pub const HEALTH_CHECK: &'static str = "/api/v1/health";
@@ -511,11 +513,11 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
             max_message_size: 64 * 1024 * 1024, // 64MB
-            request_timeout: 30,                 // 30 seconds
+            request_timeout: 30,                // 30 seconds
             keep_alive_timeout: 60,             // 60 seconds
             max_connections: 1000,              // 1000 concurrent connections
             compression: true,
-            rate_limit: Some(60),               // 60 requests per minute
+            rate_limit: Some(60), // 60 requests per minute
         }
     }
 }
@@ -527,7 +529,7 @@ mod tests {
     #[test]
     fn test_network_message_creation() {
         let message = NetworkMessage::new(MessageType::HealthCheckRequest);
-        
+
         assert_eq!(message.version, "1.0");
         assert!(message.correlation_id.is_none());
         assert!(message.timestamp <= Utc::now());
@@ -563,14 +565,12 @@ mod tests {
             reputation: Some(rust_decimal::Decimal::new(85, 2)),
         };
 
-        let message = NetworkMessage::new(
-            MessageType::HealthCheckResponse(health_response)
-        );
+        let message = NetworkMessage::new(MessageType::HealthCheckResponse(health_response));
 
         // Test JSON serialization
         let json = serde_json::to_string(&message).unwrap();
         let deserialized: NetworkMessage = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(message.id, deserialized.id);
         assert_eq!(message.version, deserialized.version);
     }
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn test_network_config_defaults() {
         let config = NetworkConfig::default();
-        
+
         assert_eq!(config.max_message_size, 64 * 1024 * 1024);
         assert_eq!(config.request_timeout, 30);
         assert!(config.compression);

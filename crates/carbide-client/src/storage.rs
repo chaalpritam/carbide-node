@@ -3,15 +3,16 @@
 //! This module provides simplified, high-level APIs for common storage operations
 //! that applications can easily integrate for decentralized file storage.
 
-use crate::CarbideClient;
+use std::collections::HashMap;
+
 use carbide_core::{
-    ContentHash, FileId, Provider, ProviderRequirements, Region, ProviderTier,
-    Result, CarbideError,
-    network::*,
+    network::*, CarbideError, ContentHash, FileId, Provider, ProviderRequirements, ProviderTier,
+    Region, Result,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
+
+use crate::CarbideClient;
 
 /// High-level storage manager that handles provider discovery,
 /// file operations, and replication automatically
@@ -125,7 +126,7 @@ impl StorageManager {
 
     /// Create storage manager with custom preferences
     pub fn with_preferences(
-        client: CarbideClient, 
+        client: CarbideClient,
         discovery_endpoint: String,
         preferences: StoragePreferences,
     ) -> Self {
@@ -144,7 +145,7 @@ impl StorageManager {
         progress_callback: Option<ProgressCallback>,
     ) -> Result<StoreResult> {
         let file_id = ContentHash::from_data(data);
-        
+
         if let Some(cb) = &progress_callback {
             cb(StorageProgress {
                 operation: "Discovering providers".to_string(),
@@ -156,10 +157,14 @@ impl StorageManager {
         }
 
         // 1. Discover suitable providers
-        let providers = self.discover_providers(data.len() as u64, duration_months).await?;
-        
+        let providers = self
+            .discover_providers(data.len() as u64, duration_months)
+            .await?;
+
         if providers.is_empty() {
-            return Err(CarbideError::Internal("No suitable providers found".to_string()));
+            return Err(CarbideError::Internal(
+                "No suitable providers found".to_string(),
+            ));
         }
 
         if let Some(cb) = &progress_callback {
@@ -175,9 +180,12 @@ impl StorageManager {
         // 2. Request storage from selected providers
         let mut storage_locations = Vec::new();
         let mut total_cost = rust_decimal::Decimal::ZERO;
-        
-        let target_replicas = std::cmp::min(self.preferences.replication_factor as usize, providers.len());
-        
+
+        let target_replicas = std::cmp::min(
+            self.preferences.replication_factor as usize,
+            providers.len(),
+        );
+
         for (i, provider) in providers.iter().take(target_replicas).enumerate() {
             let store_request = StoreFileRequest {
                 file_id,
@@ -188,14 +196,18 @@ impl StorageManager {
                 max_price: self.preferences.max_price_per_gb,
             };
 
-            match self.client.store_file(&provider.endpoint, &store_request).await {
+            match self
+                .client
+                .store_file(&provider.endpoint, &store_request)
+                .await
+            {
                 Ok(response) => {
                     if response.accepted {
-                        if let (Some(upload_url), Some(upload_token)) = 
-                            (response.upload_url, response.upload_token) {
-                            
+                        if let (Some(upload_url), Some(upload_token)) =
+                            (response.upload_url, response.upload_token)
+                        {
                             let contract = response.contract.clone();
-                            
+
                             storage_locations.push(StorageLocation {
                                 provider: provider.clone(),
                                 contract: contract.clone(),
@@ -204,15 +216,17 @@ impl StorageManager {
                             });
 
                             if let Some(contract) = &contract {
-                                let monthly_cost = contract.price_per_gb_month 
+                                let monthly_cost = contract.price_per_gb_month
                                     * rust_decimal::Decimal::new(data.len() as i64, 9) // bytes to GB
-                                    * rust_decimal::Decimal::new(duration_months as i64, 0);
+                                    * rust_decimal::Decimal::new(i64::from(duration_months), 0);
                                 total_cost += monthly_cost;
                             }
                         }
                     } else {
-                        warn!("Provider {} rejected storage: {:?}", 
-                              provider.name, response.rejection_reason);
+                        warn!(
+                            "Provider {} rejected storage: {:?}",
+                            provider.name, response.rejection_reason
+                        );
                     }
                 }
                 Err(e) => {
@@ -232,7 +246,9 @@ impl StorageManager {
         }
 
         if storage_locations.is_empty() {
-            return Err(CarbideError::Internal("No providers accepted storage request".to_string()));
+            return Err(CarbideError::Internal(
+                "No providers accepted storage request".to_string(),
+            ));
         }
 
         // 3. Upload file data to all accepting providers
@@ -247,12 +263,11 @@ impl StorageManager {
                 });
             }
 
-            match self.client.upload_file(
-                &location.upload_url,
-                &file_id,
-                data,
-                &location.upload_token,
-            ).await {
+            match self
+                .client
+                .upload_file(&location.upload_url, &file_id, data, &location.upload_token)
+                .await
+            {
                 Ok(_) => {
                     info!("Successfully uploaded file to {}", location.provider.name);
                 }
@@ -277,7 +292,10 @@ impl StorageManager {
             cb(StorageProgress {
                 operation: "Complete".to_string(),
                 progress: 1.0,
-                message: format!("File stored successfully with {} replicas", storage_locations.len()),
+                message: format!(
+                    "File stored successfully with {} replicas",
+                    storage_locations.len()
+                ),
                 bytes_transferred: data.len() as u64,
                 total_bytes: data.len() as u64,
             });
@@ -311,7 +329,7 @@ impl StorageManager {
 
         // TODO: Implement provider lookup for files
         // For now, try a few known providers
-        let test_providers = vec![
+        let test_providers = [
             "http://localhost:8080".to_string(),
             "http://localhost:8081".to_string(),
             "http://localhost:8082".to_string(),
@@ -329,7 +347,11 @@ impl StorageManager {
             }
 
             // Try to retrieve file metadata
-            match self.client.retrieve_file(provider_endpoint, file_id, access_token).await {
+            match self
+                .client
+                .retrieve_file(provider_endpoint, file_id, access_token)
+                .await
+            {
                 Ok(retrieve_response) => {
                     if let Some(download_url) = retrieve_response.download_url {
                         if let Some(cb) = &progress_callback {
@@ -413,16 +435,22 @@ impl StorageManager {
             }
         }
 
-        Err(CarbideError::Internal(format!("File {} not found on any provider", file_id)))
+        Err(CarbideError::Internal(format!(
+            "File {file_id} not found on any provider"
+        )))
     }
 
     /// Discover suitable providers for storing a file
-    async fn discover_providers(&self, file_size: u64, _duration_months: u32) -> Result<Vec<Provider>> {
+    async fn discover_providers(
+        &self,
+        file_size: u64,
+        _duration_months: u32,
+    ) -> Result<Vec<Provider>> {
         let discovery_url = format!("{}/api/v1/providers", self.discovery_endpoint);
-        
+
         let mut query_params = Vec::new();
         query_params.push("limit=20".to_string());
-        
+
         if !self.preferences.preferred_regions.is_empty() {
             // For simplicity, just use the first preferred region
             if let Some(region) = self.preferences.preferred_regions.first() {
@@ -434,51 +462,55 @@ impl StorageManager {
                     Region::Africa => "africa",
                     Region::Oceania => "oceania",
                 };
-                query_params.push(format!("region={}", region_str));
+                query_params.push(format!("region={region_str}"));
             }
         }
-        
+
         let query_string = query_params.join("&");
-        let full_url = format!("{}?{}", discovery_url, query_string);
-        
-        let response = self.client.http_client()
+        let full_url = format!("{discovery_url}?{query_string}");
+
+        let response = self
+            .client
+            .http_client()
             .get(&full_url)
             .send()
             .await
-            .map_err(|e| CarbideError::Discovery(format!("Provider discovery failed: {}", e)))?;
+            .map_err(|e| CarbideError::Discovery(format!("Provider discovery failed: {e}")))?;
 
         if !response.status().is_success() {
-            return Err(CarbideError::Discovery(
-                format!("Discovery service returned: {}", response.status())
-            ));
+            return Err(CarbideError::Discovery(format!(
+                "Discovery service returned: {}",
+                response.status()
+            )));
         }
 
         let provider_list: ProviderListResponse = response
             .json()
             .await
-            .map_err(|e| CarbideError::Discovery(format!("Failed to parse provider list: {}", e)))?;
+            .map_err(|e| CarbideError::Discovery(format!("Failed to parse provider list: {e}")))?;
 
         // Filter providers by our preferences
-        let suitable_providers: Vec<Provider> = provider_list.providers
+        let suitable_providers: Vec<Provider> = provider_list
+            .providers
             .into_iter()
             .filter(|provider| {
                 // Check if provider tier is acceptable
-                if !self.preferences.preferred_tiers.is_empty() {
-                    if !self.preferences.preferred_tiers.contains(&provider.tier) {
-                        return false;
-                    }
+                if !self.preferences.preferred_tiers.is_empty()
+                    && !self.preferences.preferred_tiers.contains(&provider.tier)
+                {
+                    return false;
                 }
-                
+
                 // Check if provider has enough capacity
                 if provider.available_capacity < file_size {
                     return false;
                 }
-                
+
                 // Check if price is acceptable
                 if provider.price_per_gb_month > self.preferences.max_price_per_gb {
                     return false;
                 }
-                
+
                 true
             })
             .take(self.preferences.replication_factor as usize)
@@ -501,7 +533,7 @@ impl StorageManager {
     pub async fn health_check(&self) -> Result<HashMap<String, ServiceStatus>> {
         let providers = self.discover_providers(1024, 1).await?; // Dummy values for discovery
         let mut results = HashMap::new();
-        
+
         for provider in providers {
             match self.client.get_provider_health(&provider.endpoint).await {
                 Ok(health) => {
@@ -512,7 +544,7 @@ impl StorageManager {
                 }
             }
         }
-        
+
         Ok(results)
     }
 }
@@ -524,14 +556,14 @@ pub mod simple {
 
     /// Store a file with default settings
     pub async fn store_file(data: &[u8], duration_months: u32) -> Result<StoreResult> {
-        let client = CarbideClient::default()?;
+        let client = CarbideClient::with_defaults()?;
         let manager = StorageManager::new(client, "http://localhost:9090".to_string());
         manager.store_file(data, duration_months, None).await
     }
 
     /// Retrieve a file with default settings  
     pub async fn retrieve_file(file_id: &FileId, access_token: &str) -> Result<Vec<u8>> {
-        let client = CarbideClient::default()?;
+        let client = CarbideClient::with_defaults()?;
         let manager = StorageManager::new(client, "http://localhost:9090".to_string());
         let result = manager.retrieve_file(file_id, access_token, None).await?;
         Ok(result.data)
@@ -539,12 +571,13 @@ pub mod simple {
 
     /// Store a file from a local file path
     pub async fn store_file_from_path(
-        file_path: &str, 
-        duration_months: u32
+        file_path: &str,
+        duration_months: u32,
     ) -> Result<(FileId, StoreResult)> {
-        let data = tokio::fs::read(file_path).await
-            .map_err(|e| CarbideError::Internal(format!("Failed to read file {}: {}", file_path, e)))?;
-        
+        let data = tokio::fs::read(file_path)
+            .await
+            .map_err(|e| CarbideError::Internal(format!("Failed to read file {file_path}: {e}")))?;
+
         let file_id = ContentHash::from_data(&data);
         let result = store_file(&data, duration_months).await?;
         Ok((file_id, result))
@@ -552,15 +585,16 @@ pub mod simple {
 
     /// Retrieve a file and save to local path
     pub async fn retrieve_file_to_path(
-        file_id: &FileId, 
+        file_id: &FileId,
         access_token: &str,
-        output_path: &str
+        output_path: &str,
     ) -> Result<u64> {
         let data = retrieve_file(file_id, access_token).await?;
-        
-        tokio::fs::write(output_path, &data).await
-            .map_err(|e| CarbideError::Internal(format!("Failed to write file {}: {}", output_path, e)))?;
-        
+
+        tokio::fs::write(output_path, &data).await.map_err(|e| {
+            CarbideError::Internal(format!("Failed to write file {output_path}: {e}"))
+        })?;
+
         Ok(data.len() as u64)
     }
 }
@@ -572,7 +606,7 @@ mod tests {
     #[test]
     fn test_storage_preferences_default() {
         let prefs = StoragePreferences::default();
-        
+
         assert_eq!(prefs.replication_factor, 3);
         assert!(prefs.preferred_regions.contains(&Region::NorthAmerica));
         assert!(prefs.preferred_tiers.contains(&ProviderTier::Professional));
@@ -582,7 +616,7 @@ mod tests {
     async fn test_simple_store_retrieve() {
         // This would need a running discovery service and providers to actually work
         let test_data = b"Hello, Carbide Network!";
-        
+
         // Just test the API structure
         let result = simple::store_file(test_data, 12).await;
         // In a real test environment, this would succeed

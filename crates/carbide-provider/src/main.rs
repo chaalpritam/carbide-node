@@ -3,13 +3,13 @@
 //! The storage provider binary that allows anyone to earn money by contributing
 //! storage capacity to the Carbide Network.
 
+use std::{path::PathBuf, time::Duration};
+
+use anyhow::{Context, Result};
 use carbide_core::{Provider, ProviderTier, Region};
-use carbide_provider::{ProviderServer, ServerConfig, ProviderConfig};
+use carbide_provider::{ProviderConfig, ProviderServer, ServerConfig};
 use clap::Parser;
 use rust_decimal::Decimal;
-use std::time::Duration;
-use std::path::PathBuf;
-use anyhow::{Context, Result};
 
 #[derive(Parser)]
 #[command(name = "carbide-provider")]
@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    
+
     /// Configuration file path
     #[arg(long, short = 'c', global = true)]
     config: Option<PathBuf>,
@@ -80,29 +80,33 @@ async fn main() -> Result<()> {
     if let Some(config_path) = &cli.config {
         return run_with_config(config_path).await;
     }
-    
+
     // If no command provided, try to find default config
     let command = cli.command.unwrap_or_else(|| {
         // Look for default config in common locations
         let default_configs = [
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".carbide/config/provider.toml")),
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".carbide/config/provider.toml")),
             Some(PathBuf::from("/usr/local/etc/carbide/provider.toml")),
             Some(PathBuf::from("./provider.toml")),
         ];
-        
+
         for config_path in default_configs.into_iter().flatten() {
             if config_path.exists() {
                 println!("📁 Found config file: {}", config_path.display());
                 // We need to handle this differently - let's create a special status command
-                return Command::Status { endpoint: config_path.to_string_lossy().to_string() };
+                return Command::Status {
+                    endpoint: config_path.to_string_lossy().to_string(),
+                };
             }
         }
-        
+
         println!("❌ No configuration found. Please provide --config or use a subcommand.");
         println!("💡 Try running: carbide-provider init --help");
         std::process::exit(1);
     });
-    
+
     match command {
         Command::Init {
             storage_path,
@@ -140,7 +144,8 @@ async fn main() -> Result<()> {
                 .with_context(|| "Failed to create config directory")?;
 
             let config_path = config_dir.join("provider.toml");
-            config.save_to_file(&config_path)
+            config
+                .save_to_file(&config_path)
                 .await
                 .with_context(|| "Failed to save provider configuration")?;
 
@@ -171,12 +176,12 @@ async fn main() -> Result<()> {
             // Parse tier and region
             let provider_tier = parse_tier(&tier)?;
             let provider_region = parse_region(&region)?;
-            
+
             // Create provider instance
             let capacity_bytes = capacity_gb * 1024 * 1024 * 1024; // Convert GB to bytes
             let price = Decimal::new((price_per_gb_month * 1000.0) as i64, 3);
             let endpoint = format!("http://localhost:{}", port);
-            
+
             let provider = Provider::new(
                 name,
                 provider_tier,
@@ -215,22 +220,23 @@ async fn main() -> Result<()> {
                     println!("🛑 Server stopped unexpectedly");
                 }
             }
-            
+
             println!("✅ Provider shut down gracefully");
         }
         Command::Status { endpoint } => {
             // Check if this is actually a config file path (from our default config detection)
             let endpoint_path = PathBuf::from(&endpoint);
-            if endpoint_path.exists() && endpoint_path.extension().map_or(false, |ext| ext == "toml") {
+            if endpoint_path.exists() && endpoint_path.extension().is_some_and(|ext| ext == "toml")
+            {
                 return run_with_config(&endpoint_path).await;
             }
-            
+
             println!("📊 Checking Provider Status at {}...", endpoint);
-            
+
             // Make HTTP request to provider's status endpoint
             let client = reqwest::Client::new();
             let status_url = format!("{}/api/v1/provider/status", endpoint);
-            
+
             match client.get(&status_url).send().await {
                 Ok(response) => {
                     if response.status().is_success() {
@@ -260,41 +266,48 @@ async fn main() -> Result<()> {
 /// Run provider using configuration file
 async fn run_with_config(config_path: &PathBuf) -> Result<()> {
     println!("🔧 Loading configuration from: {}", config_path.display());
-    
+
     // Load configuration with env var overrides
     let config = ProviderConfig::load(config_path)
         .await
         .with_context(|| format!("Failed to load config from: {}", config_path.display()))?;
-    
+
     // Create storage directory if it doesn't exist
     tokio::fs::create_dir_all(&config.provider.storage_path)
         .await
         .with_context(|| "Failed to create storage directory")?;
-    
+
     // Create log directory
     if let Some(log_dir) = config.logging.file.parent() {
         tokio::fs::create_dir_all(log_dir)
             .await
             .with_context(|| "Failed to create log directory")?;
     }
-    
+
     println!("🏪 Starting Carbide Provider...");
     println!("   Name: {}", config.provider.name);
     println!("   Tier: {}", config.provider.tier);
     println!("   Region: {}", config.provider.region);
-    println!("   Storage: {} ({}GB max)", config.provider.storage_path.display(), config.provider.max_storage_gb);
-    println!("   Price: ${:.4}/GB/month", config.pricing.price_per_gb_month);
+    println!(
+        "   Storage: {} ({}GB max)",
+        config.provider.storage_path.display(),
+        config.provider.max_storage_gb
+    );
+    println!(
+        "   Price: ${:.4}/GB/month",
+        config.pricing.price_per_gb_month
+    );
     println!("   Port: {}", config.provider.port);
-    
+
     // Parse tier and region
     let provider_tier = parse_tier(&config.provider.tier)?;
     let provider_region = parse_region(&config.provider.region)?;
-    
+
     // Create provider instance
     let capacity_bytes = config.provider.max_storage_gb * 1024 * 1024 * 1024;
     let price = Decimal::new((config.pricing.price_per_gb_month * 1000.0) as i64, 3);
     let endpoint = format!("http://{}", config.network.advertise_address);
-    
+
     let provider = Provider::new(
         config.provider.name.clone(),
         provider_tier,
@@ -303,7 +316,7 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         capacity_bytes,
         price,
     );
-    
+
     // Create server configuration
     let server_config = ServerConfig {
         host: "0.0.0.0".to_string(),
@@ -312,9 +325,13 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         max_upload_size: 100 * 1024 * 1024, // 100MB
         enable_cors: true,
     };
-    
+
     // Create and start the server
-    let server = ProviderServer::new(server_config, provider, config.provider.storage_path.clone())?;
+    let server = ProviderServer::new(
+        server_config,
+        provider,
+        config.provider.storage_path.clone(),
+    )?;
 
     // Start server in background task
     let server_handle = tokio::spawn(async move {
@@ -322,17 +339,17 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
             eprintln!("❌ Server error: {}", e);
         }
     });
-    
+
     // Health check reporting task (if enabled)
     let health_check_handle = if config.reputation.enable_reporting {
         let provider_name = config.provider.name.clone();
         let interval = Duration::from_secs(config.reputation.health_check_interval);
-        
+
         Some(tokio::spawn(async move {
             let mut interval_timer = tokio::time::interval(interval);
             loop {
                 interval_timer.tick().await;
-                
+
                 // Report health status to discovery service
                 // In a real implementation, this would send actual metrics
                 tracing::info!("Health check: Provider '{}' is healthy", provider_name);
@@ -341,15 +358,21 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
     } else {
         None
     };
-    
+
     println!("✅ Provider started successfully!");
     println!("🌐 Listening on: http://localhost:{}", config.provider.port);
-    println!("📊 Status endpoint: http://localhost:{}/api/v1/provider/status", config.provider.port);
-    println!("💾 Storage directory: {}", config.provider.storage_path.display());
+    println!(
+        "📊 Status endpoint: http://localhost:{}/api/v1/provider/status",
+        config.provider.port
+    );
+    println!(
+        "💾 Storage directory: {}",
+        config.provider.storage_path.display()
+    );
     println!("📝 Logs: {}", config.logging.file.display());
     println!();
     println!("🛑 Press Ctrl+C to stop the provider");
-    
+
     // Wait for shutdown signal
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
@@ -359,12 +382,12 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
             println!("🛑 Server stopped unexpectedly");
         }
     }
-    
+
     // Clean shutdown
     if let Some(health_handle) = health_check_handle {
         health_handle.abort();
     }
-    
+
     println!("✅ Provider shut down gracefully");
     Ok(())
 }
@@ -376,7 +399,10 @@ fn parse_tier(tier: &str) -> anyhow::Result<ProviderTier> {
         "professional" => Ok(ProviderTier::Professional),
         "enterprise" => Ok(ProviderTier::Enterprise),
         "globalcdn" => Ok(ProviderTier::GlobalCDN),
-        _ => Err(anyhow::anyhow!("Invalid tier: {}. Valid options: home, professional, enterprise, globalcdn", tier)),
+        _ => Err(anyhow::anyhow!(
+            "Invalid tier: {}. Valid options: home, professional, enterprise, globalcdn",
+            tier
+        )),
     }
 }
 
@@ -389,7 +415,11 @@ fn parse_region(region: &str) -> anyhow::Result<Region> {
         "southamerica" => Ok(Region::SouthAmerica),
         "africa" => Ok(Region::Africa),
         "oceania" => Ok(Region::Oceania),
-        _ => Err(anyhow::anyhow!("Invalid region: {}. Valid options: northamerica, europe, asia, southamerica, africa, oceania", region)),
+        _ => Err(anyhow::anyhow!(
+            "Invalid region: {}. Valid options: northamerica, europe, asia, southamerica, africa, \
+             oceania",
+            region
+        )),
     }
 }
 
@@ -398,15 +428,21 @@ fn parse_capacity(capacity: &str) -> anyhow::Result<u64> {
     let capacity = capacity.trim().to_uppercase();
 
     if let Some(num) = capacity.strip_suffix("TB") {
-        let val: u64 = num.trim().parse()
+        let val: u64 = num
+            .trim()
+            .parse()
             .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
         Ok(val * 1024)
     } else if let Some(num) = capacity.strip_suffix("GB") {
-        let val: u64 = num.trim().parse()
+        let val: u64 = num
+            .trim()
+            .parse()
             .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
         Ok(val)
     } else if let Some(num) = capacity.strip_suffix("MB") {
-        let val: u64 = num.trim().parse()
+        let val: u64 = num
+            .trim()
+            .parse()
             .map_err(|_| anyhow::anyhow!("Invalid capacity number: {}", num))?;
         if val < 1024 {
             anyhow::bail!("Minimum capacity is 1GB (1024MB), got {}MB", val);
@@ -414,8 +450,12 @@ fn parse_capacity(capacity: &str) -> anyhow::Result<u64> {
         Ok(val / 1024)
     } else {
         // Assume GB if no suffix
-        let val: u64 = capacity.parse()
-            .map_err(|_| anyhow::anyhow!("Invalid capacity: {}. Use format like '25GB', '1TB'", capacity))?;
+        let val: u64 = capacity.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "Invalid capacity: {}. Use format like '25GB', '1TB'",
+                capacity
+            )
+        })?;
         Ok(val)
     }
 }

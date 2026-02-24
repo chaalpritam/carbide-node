@@ -5,8 +5,9 @@
 //! 2. TOML config file
 //! 3. Built-in defaults
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
 
 /// Provider configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +82,10 @@ impl Default for ProviderConfig {
 
         Self {
             provider: ProviderSection {
-                name: format!("{}-carbide-provider", gethostname::gethostname().to_string_lossy()),
+                name: format!(
+                    "{}-carbide-provider",
+                    gethostname::gethostname().to_string_lossy()
+                ),
                 tier: "Home".to_string(),
                 region: "NorthAmerica".to_string(),
                 port: 8080,
