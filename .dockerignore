@@ -1,0 +1,9 @@
+target/
+gui/
+.git
+*.dmg
+tests/
+demo/
+*.md
+.gitignore
+.cargo/
