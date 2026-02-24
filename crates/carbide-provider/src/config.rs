@@ -48,6 +48,13 @@ pub struct NetworkSection {
     pub discovery_endpoint: String,
     /// Address to advertise to clients
     pub advertise_address: String,
+    /// Heartbeat interval in seconds (default 60)
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval_secs: u64,
+}
+
+fn default_heartbeat_interval() -> u64 {
+    60
 }
 
 /// Pricing configuration section
@@ -95,6 +102,7 @@ impl Default for ProviderConfig {
             network: NetworkSection {
                 discovery_endpoint: "https://discovery.carbidenetwork.xyz".to_string(),
                 advertise_address: "127.0.0.1:8080".to_string(),
+                heartbeat_interval_secs: 60,
             },
             pricing: PricingSection {
                 price_per_gb_month: 0.005,
@@ -168,6 +176,11 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_ADVERTISE_ADDRESS") {
             self.network.advertise_address = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_HEARTBEAT_INTERVAL") {
+            if let Ok(secs) = v.parse::<u64>() {
+                self.network.heartbeat_interval_secs = secs;
+            }
         }
         if let Ok(v) = std::env::var("CARBIDE_PRICE_PER_GB") {
             if let Ok(price) = v.parse::<f64>() {
