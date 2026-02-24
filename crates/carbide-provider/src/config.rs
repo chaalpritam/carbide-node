@@ -93,7 +93,7 @@ impl Default for ProviderConfig {
                 max_storage_gb: 25,
             },
             network: NetworkSection {
-                discovery_endpoint: "http://localhost:3000".to_string(),
+                discovery_endpoint: "https://discovery.carbidenetwork.xyz".to_string(),
                 advertise_address: "127.0.0.1:8080".to_string(),
             },
             pricing: PricingSection {
