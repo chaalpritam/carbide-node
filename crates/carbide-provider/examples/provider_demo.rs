@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🚀 Starting provider server...");
     let storage_path = std::path::PathBuf::from("./demo_storage");
-    let server = ProviderServer::new(config, provider, storage_path, None, None, 60)?;
+    let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default())?;
 
     // Start server in background
     let server_handle = tokio::spawn(async move {

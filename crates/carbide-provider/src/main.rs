@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
 
             // Create and start the server (no discovery or key pair in quick-start mode)
             let storage_path = PathBuf::from("./storage");
-            let server = ProviderServer::new(config, provider, storage_path, None, None, 60)?;
+            let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default())?;
 
             // Start server in background task
             let server_handle = tokio::spawn(async move {
@@ -350,6 +350,13 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         enable_cors: true,
     };
 
+    // Build auth config from provider config
+    let auth_config = carbide_provider::auth::AuthConfig {
+        enabled: config.auth.enabled,
+        jwt_secret: config.auth.jwt_secret.clone(),
+        api_key_hashes: config.auth.api_key_hashes.clone(),
+    };
+
     // Create and start the server
     let server = ProviderServer::new(
         server_config,
@@ -358,6 +365,7 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         discovery_endpoint,
         key_pair,
         config.network.heartbeat_interval_secs,
+        auth_config,
     )?;
 
     // Start server in background task (registration_loop is spawned inside start())

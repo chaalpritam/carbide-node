@@ -27,6 +27,7 @@
     clippy::too_many_lines
 )]
 
+pub mod auth;
 pub mod config;
 pub mod server;
 

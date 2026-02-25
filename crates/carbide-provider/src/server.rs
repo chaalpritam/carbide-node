@@ -11,6 +11,7 @@ use std::{collections::HashMap, fs, path::PathBuf, sync::Arc, time::Duration};
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
+    middleware,
     response::Json,
     routing::{delete, get, post},
     Router,
@@ -22,6 +23,8 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{info, warn};
+
+use crate::auth::{auth_middleware, AuthConfig, AuthState};
 
 /// Provider server configuration
 #[derive(Debug, Clone)]
@@ -71,6 +74,8 @@ pub struct ProviderServer {
     key_pair: Option<Arc<ProviderKeyPair>>,
     /// Heartbeat interval in seconds
     heartbeat_interval_secs: u64,
+    /// Authentication configuration
+    auth_config: AuthConfig,
 }
 
 /// Information about a stored file
@@ -120,6 +125,7 @@ impl ProviderServer {
         discovery_endpoint: Option<String>,
         key_pair: Option<Arc<ProviderKeyPair>>,
         heartbeat_interval_secs: u64,
+        auth_config: AuthConfig,
     ) -> Result<Self> {
         let storage_dir = storage_path.join(provider.id.to_string());
 
@@ -151,6 +157,7 @@ impl ProviderServer {
             discovery_endpoint,
             key_pair,
             heartbeat_interval_secs,
+            auth_config,
         })
     }
 
@@ -248,23 +255,33 @@ impl ProviderServer {
         let enable_cors = self.config.enable_cors;
         let request_timeout = self.config.request_timeout;
         let max_upload_size = self.config.max_upload_size;
+        let auth_state = Arc::new(AuthState {
+            config: self.auth_config.clone(),
+        });
         let server_state = Arc::new(self);
 
-        Router::new()
-            // Health and status endpoints
+        // Public routes — health and status (no auth required)
+        let public_routes = Router::new()
             .route(ApiEndpoints::HEALTH_CHECK, get(health_check))
-            .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status))
-            // File storage endpoints
+            .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status));
+
+        // Protected routes — all file/marketplace/proof operations
+        let protected_routes = Router::new()
             .route(ApiEndpoints::FILE_STORE, post(store_file_request))
             .route(ApiEndpoints::FILE_RETRIEVE, get(retrieve_file))
             .route(ApiEndpoints::FILE_DELETE, delete(delete_file))
             .route(ApiEndpoints::FILE_UPLOAD, post(upload_file))
             .route(ApiEndpoints::FILE_DOWNLOAD, get(download_file))
-            // Marketplace endpoints
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
-            // Proof of storage endpoints
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
+            .route_layer(middleware::from_fn_with_state(
+                auth_state,
+                auth_middleware,
+            ));
+
+        public_routes
+            .merge(protected_routes)
             .with_state(server_state)
             .layer(
                 ServiceBuilder::new()
@@ -935,7 +952,7 @@ mod tests {
         );
 
         let storage_path = PathBuf::from("./test_storage");
-        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60).unwrap();
+        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60, Default::default()).unwrap();
 
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);

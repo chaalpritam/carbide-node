@@ -22,6 +22,33 @@ pub struct ProviderConfig {
     pub logging: LoggingSection,
     /// Reputation system configuration
     pub reputation: ReputationSection,
+    /// Authentication configuration
+    #[serde(default)]
+    pub auth: AuthSection,
+}
+
+/// Authentication configuration section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthSection {
+    /// Enable authentication (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// JWT secret for verifying Bearer tokens
+    #[serde(default)]
+    pub jwt_secret: Option<String>,
+    /// SHA-256 hashes of accepted API keys
+    #[serde(default)]
+    pub api_key_hashes: Vec<String>,
+}
+
+impl Default for AuthSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            jwt_secret: None,
+            api_key_hashes: Vec::new(),
+        }
+    }
 }
 
 /// Provider-specific configuration section
@@ -115,6 +142,7 @@ impl Default for ProviderConfig {
                 enable_reporting: true,
                 health_check_interval: 300,
             },
+            auth: AuthSection::default(),
         }
     }
 }
@@ -192,6 +220,17 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_LOG_FILE") {
             self.logging.file = PathBuf::from(v);
+        }
+
+        // Auth overrides
+        if let Ok(v) = std::env::var("CARBIDE_AUTH_ENABLED") {
+            self.auth.enabled = v == "true" || v == "1";
+        }
+        if let Ok(v) = std::env::var("CARBIDE_AUTH_JWT_SECRET") {
+            self.auth.jwt_secret = Some(v);
+        }
+        if let Ok(v) = std::env::var("CARBIDE_AUTH_API_KEY_HASHES") {
+            self.auth.api_key_hashes = v.split(',').map(|s| s.trim().to_string()).collect();
         }
     }
 
