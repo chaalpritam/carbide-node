@@ -29,6 +29,7 @@
 
 pub mod client;
 pub mod discovery;
+pub mod file_registry;
 pub mod payment;
 pub mod storage;
 pub mod wallet;
@@ -40,6 +41,9 @@ pub use storage::{
     simple, ProgressCallback, RetrieveResult, StorageLocation, StorageManager, StoragePreferences,
     StorageProgress, StoreResult,
 };
+
+// Re-export file registry types
+pub use file_registry::{FileRecord, FileRegistry, ProviderLocation};
 
 // Re-export crypto types for encryption support
 pub use carbide_crypto::{EncryptionKey, KeyManager};
