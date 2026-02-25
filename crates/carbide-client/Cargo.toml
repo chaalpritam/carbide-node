@@ -37,6 +37,10 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.8"
+tiny-keccak = { workspace = true }
+
 [features]
 default = []
 # Mobile optimizations

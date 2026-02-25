@@ -30,6 +30,7 @@
 pub mod client;
 pub mod discovery;
 pub mod storage;
+pub mod wallet;
 
 // Re-exports for convenience
 pub use client::{CarbideClient, ClientConfig, ProviderTestResult};
