@@ -86,6 +86,9 @@ pub struct ProviderServer {
     db: Option<Arc<StorageDb>>,
     /// Challenges we have issued that are awaiting proof responses
     active_challenges: Arc<tokio::sync::RwLock<HashMap<String, StorageChallengeData>>>,
+    /// On-chain payment service for deposit verification (blockchain feature only)
+    #[cfg(feature = "blockchain")]
+    payment_service: Option<Arc<crate::payment::PaymentService>>,
 }
 
 /// Information about a stored file
@@ -226,7 +229,15 @@ impl ProviderServer {
             tls_config,
             db,
             active_challenges: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            #[cfg(feature = "blockchain")]
+            payment_service: None,
         })
+    }
+
+    /// Set the on-chain payment service (blockchain feature only)
+    #[cfg(feature = "blockchain")]
+    pub fn set_payment_service(&mut self, service: Arc<crate::payment::PaymentService>) {
+        self.payment_service = Some(service);
     }
 
     /// Get the file path for storing a file
@@ -1259,14 +1270,22 @@ pub struct DepositVerificationResponse {
     pub message: String,
 }
 
+/// Request body for deposit verification
+#[derive(Debug, Deserialize)]
+pub struct VerifyDepositRequest {
+    /// On-chain escrow ID to verify
+    pub escrow_id: u64,
+}
+
 /// Verify that an on-chain escrow deposit has been made for a contract.
 ///
-/// This is a placeholder implementation — with the `blockchain` feature,
-/// it would query the on-chain escrow contract to confirm the deposit.
-/// Without the feature, it accepts the deposit as confirmed for testing.
+/// With the `blockchain` feature, this queries the on-chain escrow contract
+/// to confirm the deposit, verify the provider address matches, and store
+/// the escrow metadata. Without the feature, it accepts the deposit for testing.
 async fn verify_deposit(
     State(server): State<Arc<ProviderServer>>,
     Path(contract_id): Path<String>,
+    body: Option<Json<VerifyDepositRequest>>,
 ) -> std::result::Result<Json<DepositVerificationResponse>, StatusCode> {
     let contract_uuid = Uuid::parse_str(&contract_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -1284,14 +1303,57 @@ async fn verify_deposit(
         }));
     }
 
-    // In a full implementation with the blockchain feature, we would:
-    // 1. Query the escrow contract to check if the deposit exists
-    // 2. Verify the amount matches the contract terms
-    // 3. Verify the provider address matches
-    //
-    // For now, we transition the contract to Active to enable the upload flow.
+    let escrow_id = body.as_ref().map(|b| b.escrow_id);
+
+    // With blockchain feature: query on-chain escrow to verify deposit
+    #[cfg(feature = "blockchain")]
+    if let Some(ref payment_service) = server.payment_service {
+        let eid = escrow_id.ok_or_else(|| {
+            tracing::warn!("verify_deposit called without escrow_id while blockchain is enabled");
+            StatusCode::BAD_REQUEST
+        })?;
+
+        let funded = payment_service
+            .is_escrow_funded(eid)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to query escrow: {}", e);
+                StatusCode::BAD_GATEWAY
+            })?;
+
+        if !funded {
+            return Ok(Json(DepositVerificationResponse {
+                verified: false,
+                status: "PendingDeposit".to_string(),
+                message: "On-chain escrow is not funded or not active".to_string(),
+            }));
+        }
+
+        // Verify provider address matches
+        let details = payment_service
+            .get_escrow(eid)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get escrow details: {}", e);
+                StatusCode::BAD_GATEWAY
+            })?;
+
+        info!(
+            escrow_id = eid,
+            total_amount = %details.total_amount,
+            client = %details.client,
+            "On-chain deposit verified"
+        );
+    }
+
+    // Transition contract to Active
     contract.status = ContractStatus::Active;
     contract.payment_status = Some("deposited".to_string());
+
+    // Store escrow_id if provided
+    if let Some(eid) = escrow_id {
+        contract.escrow_id = Some(eid);
+    }
 
     // Persist the update
     if let Some(ref db) = server.db {

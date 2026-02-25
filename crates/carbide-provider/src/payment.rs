@@ -14,6 +14,7 @@ use carbide_core::{CarbideError, Result};
 use crate::contracts::{CarbideEscrowContract, MockUsdcContract};
 
 /// Service for interacting with on-chain escrow contracts
+#[derive(Debug)]
 pub struct PaymentService {
     /// Ethers provider for read-only queries
     provider: Arc<Provider<Http>>,

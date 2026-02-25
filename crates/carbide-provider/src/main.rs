@@ -500,7 +500,8 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
 
     // Create and start the server (with SQLite persistence)
     let db_path = config.provider.storage_path.join("provider.db");
-    let server = ProviderServer::new(
+    #[allow(unused_mut)]
+    let mut server = ProviderServer::new(
         server_config,
         provider,
         config.provider.storage_path.clone(),
@@ -511,6 +512,41 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         tls_config,
         Some(&db_path),
     )?;
+
+    // Wire up on-chain payment service when blockchain feature is enabled
+    // and contract addresses are configured
+    #[cfg(feature = "blockchain")]
+    {
+        let escrow_addr = &config.wallet.escrow_address;
+        let usdc_addr = &config.wallet.usdc_address;
+        if !escrow_addr.is_empty() && !usdc_addr.is_empty() {
+            use ethers::types::Address;
+            let escrow_address: Address = escrow_addr
+                .parse()
+                .with_context(|| format!("Invalid escrow address: {}", escrow_addr))?;
+            let usdc_address: Address = usdc_addr
+                .parse()
+                .with_context(|| format!("Invalid USDC address: {}", usdc_addr))?;
+
+            let payment_service = carbide_provider::payment::PaymentService::new(
+                &config.wallet.rpc_url,
+                escrow_address,
+                usdc_address,
+                config.wallet.chain_id,
+            )
+            .with_context(|| "Failed to create payment service")?;
+
+            server.set_payment_service(std::sync::Arc::new(payment_service));
+            info!(
+                escrow = %escrow_addr,
+                usdc = %usdc_addr,
+                chain_id = config.wallet.chain_id,
+                "On-chain payment verification enabled"
+            );
+        } else {
+            warn!("Blockchain feature enabled but escrow/usdc addresses not set — deposit verification will use dev mode");
+        }
+    }
 
     info!(
         listen_url = %format!("http://localhost:{}", config.provider.port),

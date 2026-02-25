@@ -112,6 +112,12 @@ pub struct WalletSection {
     /// JSON-RPC URL for the target chain
     #[serde(default = "default_rpc_url")]
     pub rpc_url: String,
+    /// CarbideEscrow contract address (empty = blockchain features disabled)
+    #[serde(default)]
+    pub escrow_address: String,
+    /// USDC token contract address
+    #[serde(default)]
+    pub usdc_address: String,
 }
 
 fn default_wallet_path() -> PathBuf {
@@ -133,6 +139,8 @@ impl Default for WalletSection {
             wallet_path: default_wallet_path(),
             chain_id: default_chain_id(),
             rpc_url: default_rpc_url(),
+            escrow_address: String::new(),
+            usdc_address: String::new(),
         }
     }
 }
@@ -375,6 +383,12 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_RPC_URL") {
             self.wallet.rpc_url = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_ESCROW_ADDRESS") {
+            self.wallet.escrow_address = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_USDC_ADDRESS") {
+            self.wallet.usdc_address = v;
         }
 
         // Proof scheduler overrides
