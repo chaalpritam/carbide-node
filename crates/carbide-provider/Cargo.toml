@@ -44,10 +44,14 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-# Authentication
+# Auth
 jsonwebtoken = { workspace = true }
 hex = { workspace = true }
-sha2 = { workspace = true }
+sha2 = "0.10"
+
+# TLS
+axum-server = { workspace = true }
+rcgen = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

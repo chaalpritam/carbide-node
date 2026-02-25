@@ -25,6 +25,49 @@ pub struct ProviderConfig {
     /// Authentication configuration
     #[serde(default)]
     pub auth: AuthSection,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: TlsSection,
+}
+
+/// TLS configuration section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsSection {
+    /// Enable TLS (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to PEM certificate file
+    #[serde(default = "default_cert_path")]
+    pub cert_path: PathBuf,
+    /// Path to PEM private key file
+    #[serde(default = "default_key_path")]
+    pub key_path: PathBuf,
+    /// Auto-generate self-signed certificate if missing (default: true)
+    #[serde(default = "default_auto_generate")]
+    pub auto_generate: bool,
+}
+
+fn default_cert_path() -> PathBuf {
+    PathBuf::from("certs/server.crt")
+}
+
+fn default_key_path() -> PathBuf {
+    PathBuf::from("certs/server.key")
+}
+
+fn default_auto_generate() -> bool {
+    true
+}
+
+impl Default for TlsSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            cert_path: default_cert_path(),
+            key_path: default_key_path(),
+            auto_generate: default_auto_generate(),
+        }
+    }
 }
 
 /// Authentication configuration section
@@ -143,6 +186,7 @@ impl Default for ProviderConfig {
                 health_check_interval: 300,
             },
             auth: AuthSection::default(),
+            tls: TlsSection::default(),
         }
     }
 }
@@ -231,6 +275,20 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_AUTH_API_KEY_HASHES") {
             self.auth.api_key_hashes = v.split(',').map(|s| s.trim().to_string()).collect();
+        }
+
+        // TLS overrides
+        if let Ok(v) = std::env::var("CARBIDE_TLS_ENABLED") {
+            self.tls.enabled = v == "true" || v == "1";
+        }
+        if let Ok(v) = std::env::var("CARBIDE_TLS_CERT_PATH") {
+            self.tls.cert_path = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("CARBIDE_TLS_KEY_PATH") {
+            self.tls.key_path = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("CARBIDE_TLS_AUTO_GENERATE") {
+            self.tls.auto_generate = v == "true" || v == "1";
         }
     }
 

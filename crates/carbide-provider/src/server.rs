@@ -25,6 +25,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{info, warn};
 
 use crate::auth::{auth_middleware, AuthConfig, AuthState};
+use crate::tls::TlsConfig;
 
 /// Provider server configuration
 #[derive(Debug, Clone)]
@@ -76,6 +77,8 @@ pub struct ProviderServer {
     heartbeat_interval_secs: u64,
     /// Authentication configuration
     auth_config: AuthConfig,
+    /// TLS configuration
+    tls_config: TlsConfig,
 }
 
 /// Information about a stored file
@@ -126,6 +129,7 @@ impl ProviderServer {
         key_pair: Option<Arc<ProviderKeyPair>>,
         heartbeat_interval_secs: u64,
         auth_config: AuthConfig,
+        tls_config: TlsConfig,
     ) -> Result<Self> {
         let storage_dir = storage_path.join(provider.id.to_string());
 
@@ -158,6 +162,7 @@ impl ProviderServer {
             key_pair,
             heartbeat_interval_secs,
             auth_config,
+            tls_config,
         })
     }
 
@@ -235,17 +240,35 @@ impl ProviderServer {
         }
 
         // Create the router with all endpoints
+        let tls_config = self.tls_config.clone();
         let app = self.create_router();
 
-        // Create TCP listener
-        let listener = TcpListener::bind(&addr)
-            .await
-            .map_err(|e| CarbideError::Internal(format!("Failed to bind to {addr}: {e}")))?;
+        if tls_config.enabled {
+            info!("TLS enabled, loading certificate...");
+            let rustls_config =
+                crate::tls::load_rustls_config(&tls_config)
+                    .await
+                    .map_err(|e| CarbideError::Internal(format!("TLS config error: {e}")))?;
 
-        // Start the server
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| CarbideError::Internal(format!("Server error: {e}")))?;
+            let addr_parsed: std::net::SocketAddr = addr.parse().map_err(|e| {
+                CarbideError::Internal(format!("Invalid address {addr}: {e}"))
+            })?;
+
+            info!("Starting HTTPS server on {}", addr);
+            axum_server::bind_rustls(addr_parsed, rustls_config)
+                .serve(app.into_make_service())
+                .await
+                .map_err(|e| CarbideError::Internal(format!("TLS server error: {e}")))?;
+        } else {
+            // Create TCP listener (plain HTTP)
+            let listener = TcpListener::bind(&addr)
+                .await
+                .map_err(|e| CarbideError::Internal(format!("Failed to bind to {addr}: {e}")))?;
+
+            axum::serve(listener, app)
+                .await
+                .map_err(|e| CarbideError::Internal(format!("Server error: {e}")))?;
+        }
 
         Ok(())
     }
@@ -952,7 +975,7 @@ mod tests {
         );
 
         let storage_path = PathBuf::from("./test_storage");
-        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60, Default::default()).unwrap();
+        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60, Default::default(), Default::default()).unwrap();
 
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);

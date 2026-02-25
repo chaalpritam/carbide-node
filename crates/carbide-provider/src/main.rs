@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
 
             // Create and start the server (no discovery or key pair in quick-start mode)
             let storage_path = PathBuf::from("./storage");
-            let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default())?;
+            let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default(), Default::default())?;
 
             // Start server in background task
             let server_handle = tokio::spawn(async move {
@@ -357,6 +357,14 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         api_key_hashes: config.auth.api_key_hashes.clone(),
     };
 
+    // Build TLS config from provider config
+    let tls_config = carbide_provider::tls::TlsConfig {
+        enabled: config.tls.enabled,
+        cert_path: config.tls.cert_path.clone(),
+        key_path: config.tls.key_path.clone(),
+        auto_generate: config.tls.auto_generate,
+    };
+
     // Create and start the server
     let server = ProviderServer::new(
         server_config,
@@ -366,6 +374,7 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         key_pair,
         config.network.heartbeat_interval_secs,
         auth_config,
+        tls_config,
     )?;
 
     // Start server in background task (registration_loop is spawned inside start())
