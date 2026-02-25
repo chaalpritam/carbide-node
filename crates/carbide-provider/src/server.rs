@@ -25,6 +25,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{info, warn};
 
 use crate::auth::{auth_middleware, AuthConfig, AuthState};
+use crate::metrics;
 use crate::storage_db::StorageDb;
 use crate::tls::TlsConfig;
 
@@ -268,6 +269,18 @@ impl ProviderServer {
     /// Start the HTTP server
     pub async fn start(self) -> Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
+
+        // Initialize Prometheus metrics
+        metrics::register_metrics();
+
+        // Seed gauges from current stats
+        {
+            let stats = self.stats.read().await;
+            metrics::STORAGE_BYTES_USED.set(stats.total_bytes_stored as i64);
+            metrics::FILES_STORED.set(stats.total_files as i64);
+            metrics::ACTIVE_CONTRACTS.set(stats.active_contracts as i64);
+        }
+
         info!("🚀 Starting Carbide Provider Server on {}", addr);
 
         info!("✅ Provider server listening on {}", addr);
@@ -341,10 +354,11 @@ impl ProviderServer {
         });
         let server_state = Arc::new(self);
 
-        // Public routes — health and status (no auth required)
+        // Public routes — health, status, and metrics (no auth required)
         let public_routes = Router::new()
             .route(ApiEndpoints::HEALTH_CHECK, get(health_check))
-            .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status));
+            .route(ApiEndpoints::PROVIDER_STATUS, get(provider_status))
+            .route("/metrics", get(metrics::metrics_handler));
 
         // Protected routes — all file/marketplace/proof operations
         let protected_routes = Router::new()
@@ -558,7 +572,7 @@ async fn store_file_request(
                     last_proof_at: None,
                 };
 
-                // Store the contract (in-memory + SQLite)
+                // Store the contract (in-memory + SQLite) and update metrics
                 if let Some(ref db) = server.db {
                     if let Err(e) = db.insert_contract(&contract) {
                         tracing::error!("Failed to persist contract to database: {}", e);
@@ -569,6 +583,7 @@ async fn store_file_request(
                     .write()
                     .await
                     .insert(contract.id, contract.clone());
+                metrics::ACTIVE_CONTRACTS.inc();
 
                 // Generate upload URL using the provider's public endpoint
                 let upload_url =
@@ -691,6 +706,10 @@ async fn upload_file(
     stats.total_bytes_stored += file_data.len() as u64;
     stats.available_space = stats.available_space.saturating_sub(file_data.len() as u64);
 
+    // Update Prometheus gauges
+    metrics::FILES_STORED.inc();
+    metrics::STORAGE_BYTES_USED.add(file_data.len() as i64);
+
     info!(
         "✅ File {} uploaded successfully ({} bytes)",
         file_id,
@@ -790,6 +809,10 @@ async fn delete_file(
         };
 
         let message = NetworkMessage::new(MessageType::DeleteFileResponse(response));
+
+        // Update Prometheus gauges
+        metrics::FILES_STORED.dec();
+        metrics::STORAGE_BYTES_USED.sub(stored_file.size as i64);
 
         info!(
             "✅ File {} deleted ({} bytes freed)",
