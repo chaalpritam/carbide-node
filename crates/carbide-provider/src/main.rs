@@ -11,6 +11,7 @@ use carbide_crypto::ProviderKeyPair;
 use carbide_provider::{ProviderConfig, ProviderServer, ServerConfig};
 use clap::Parser;
 use rust_decimal::Decimal;
+use tracing::{error, info, warn};
 
 #[derive(Parser)]
 #[command(name = "carbide-provider")]
@@ -72,8 +73,19 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing for logging
-    tracing_subscriber::fmt::init();
+    // Initialize tracing.  JSON output for production; human-readable otherwise.
+    let use_json = std::env::var("CARBIDE_LOG_FORMAT")
+        .map(|v| v == "json")
+        .unwrap_or(false)
+        || std::env::var("NODE_ENV")
+            .map(|v| v == "production")
+            .unwrap_or(false);
+
+    if use_json {
+        tracing_subscriber::fmt().json().init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 
     let cli = Cli::parse();
 
@@ -255,7 +267,7 @@ async fn main() -> Result<()> {
 
 /// Run provider using configuration file
 async fn run_with_config(config_path: &PathBuf) -> Result<()> {
-    println!("🔧 Loading configuration from: {}", config_path.display());
+    info!(path = %config_path.display(), "Loading configuration");
 
     // Load configuration with env var overrides
     let config = ProviderConfig::load(config_path)
@@ -279,20 +291,16 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
             .with_context(|| "Failed to create log directory")?;
     }
 
-    println!("🏪 Starting Carbide Provider...");
-    println!("   Name: {}", config.provider.name);
-    println!("   Tier: {}", config.provider.tier);
-    println!("   Region: {}", config.provider.region);
-    println!(
-        "   Storage: {} ({}GB max)",
-        config.provider.storage_path.display(),
-        config.provider.max_storage_gb
+    info!(
+        name = %config.provider.name,
+        tier = %config.provider.tier,
+        region = %config.provider.region,
+        storage_path = %config.provider.storage_path.display(),
+        max_storage_gb = config.provider.max_storage_gb,
+        price_per_gb_month = config.pricing.price_per_gb_month,
+        port = config.provider.port,
+        "Starting Carbide Provider"
     );
-    println!(
-        "   Price: ${:.4}/GB/month",
-        config.pricing.price_per_gb_month
-    );
-    println!("   Port: {}", config.provider.port);
 
     // Parse tier and region
     let provider_tier = parse_tier(&config.provider.tier)?;
@@ -319,11 +327,11 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         .join("keys/provider.key.json");
     let key_pair = match ProviderKeyPair::load_or_generate(&key_path) {
         Ok(kp) => {
-            println!("🔑 Provider public key: {}", kp.public_key_hex());
+            info!(public_key = %kp.public_key_hex(), "Provider key pair loaded");
             Some(Arc::new(kp))
         }
         Err(e) => {
-            eprintln!("⚠️  Failed to load/generate key pair: {e}. Running without signing.");
+            warn!(error = %e, "Failed to load/generate key pair, running without signing");
             None
         }
     };
@@ -373,27 +381,21 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         Some(&db_path),
     )?;
 
-    println!("✅ Provider started successfully!");
-    println!("🌐 Listening on: http://localhost:{}", config.provider.port);
-    println!(
-        "📊 Status endpoint: http://localhost:{}/api/v1/provider/status",
-        config.provider.port
+    info!(
+        listen_url = %format!("http://localhost:{}", config.provider.port),
+        status_endpoint = %format!("http://localhost:{}/api/v1/provider/status", config.provider.port),
+        storage_dir = %config.provider.storage_path.display(),
+        log_file = %config.logging.file.display(),
+        "Provider started successfully — press Ctrl+C to stop"
     );
-    println!(
-        "💾 Storage directory: {}",
-        config.provider.storage_path.display()
-    );
-    println!("📝 Logs: {}", config.logging.file.display());
-    println!();
-    println!("🛑 Press Ctrl+C to stop the provider");
 
     // Server handles graceful shutdown internally (SIGINT/SIGTERM).
     // In-flight requests are drained before exit.
     if let Err(e) = server.start().await {
-        eprintln!("❌ Server error: {}", e);
+        error!(error = %e, "Server error");
     }
 
-    println!("✅ Provider shut down gracefully");
+    info!("Provider shut down gracefully");
     Ok(())
 }
 
