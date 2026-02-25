@@ -32,6 +32,7 @@ pub mod config;
 pub mod metrics;
 pub mod proof_scheduler;
 pub mod rate_limit;
+pub mod reputation_emitter;
 pub mod server;
 pub mod storage_db;
 pub mod tls;

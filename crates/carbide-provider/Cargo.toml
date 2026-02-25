@@ -15,6 +15,7 @@ path = "src/main.rs"
 # Internal dependencies
 carbide-core = { path = "../carbide-core" }
 carbide-crypto = { path = "../carbide-crypto" }
+carbide-reputation = { path = "../carbide-reputation" }
 
 # Web server and networking
 axum = { workspace = true }
