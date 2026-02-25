@@ -206,21 +206,9 @@ async fn main() -> Result<()> {
             let db_path = storage_path.join("provider.db");
             let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default(), Default::default(), Some(&db_path))?;
 
-            // Start server in background task
-            let server_handle = tokio::spawn(async move {
-                if let Err(e) = server.start().await {
-                    eprintln!("❌ Server error: {}", e);
-                }
-            });
-
-            // Wait for shutdown signal
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    println!("🛑 Received shutdown signal, stopping provider...");
-                }
-                _ = server_handle => {
-                    println!("🛑 Server stopped unexpectedly");
-                }
+            // Server handles graceful shutdown internally (SIGINT/SIGTERM)
+            if let Err(e) = server.start().await {
+                eprintln!("❌ Server error: {}", e);
             }
 
             println!("✅ Provider shut down gracefully");
@@ -385,13 +373,6 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         Some(&db_path),
     )?;
 
-    // Start server in background task (registration_loop is spawned inside start())
-    let server_handle = tokio::spawn(async move {
-        if let Err(e) = server.start().await {
-            eprintln!("❌ Server error: {}", e);
-        }
-    });
-
     println!("✅ Provider started successfully!");
     println!("🌐 Listening on: http://localhost:{}", config.provider.port);
     println!(
@@ -406,14 +387,10 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
     println!();
     println!("🛑 Press Ctrl+C to stop the provider");
 
-    // Wait for shutdown signal
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            println!("\\n🛑 Received shutdown signal, stopping provider...");
-        }
-        _ = server_handle => {
-            println!("🛑 Server stopped unexpectedly");
-        }
+    // Server handles graceful shutdown internally (SIGINT/SIGTERM).
+    // In-flight requests are drained before exit.
+    if let Err(e) = server.start().await {
+        eprintln!("❌ Server error: {}", e);
     }
 
     println!("✅ Provider shut down gracefully");

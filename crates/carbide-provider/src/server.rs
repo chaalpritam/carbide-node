@@ -335,14 +335,17 @@ impl ProviderServer {
                 .await
                 .map_err(|e| CarbideError::Internal(format!("TLS server error: {e}")))?;
         } else {
-            // Create TCP listener (plain HTTP)
+            // Create TCP listener (plain HTTP) with graceful shutdown
             let listener = TcpListener::bind(&addr)
                 .await
                 .map_err(|e| CarbideError::Internal(format!("Failed to bind to {addr}: {e}")))?;
 
             axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
                 .await
                 .map_err(|e| CarbideError::Internal(format!("Server error: {e}")))?;
+
+            info!("Server shut down gracefully");
         }
 
         Ok(())
@@ -401,6 +404,36 @@ impl ProviderServer {
                         CorsLayer::new()
                     }),
             )
+    }
+}
+
+// ============================================================================
+// Graceful Shutdown
+// ============================================================================
+
+/// Wait for SIGINT (Ctrl+C) or SIGTERM to initiate graceful shutdown.
+/// In-flight requests are allowed to complete before the server exits.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => info!("Received SIGINT, shutting down..."),
+        () = terminate => info!("Received SIGTERM, shutting down..."),
     }
 }
 
