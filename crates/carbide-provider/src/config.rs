@@ -31,6 +31,9 @@ pub struct ProviderConfig {
     /// Wallet and blockchain configuration
     #[serde(default)]
     pub wallet: WalletSection,
+    /// Proof-of-storage scheduler configuration
+    #[serde(default)]
+    pub proof: ProofSection,
 }
 
 /// TLS configuration section
@@ -134,6 +137,34 @@ impl Default for WalletSection {
     }
 }
 
+/// Proof-of-storage scheduler configuration section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProofSection {
+    /// Interval between proof rounds in seconds (default 21600 = 6 hours)
+    #[serde(default = "default_proof_interval")]
+    pub interval_secs: u64,
+    /// Fraction of file to sample per proof (0.0–1.0, default 0.1 = 10%)
+    #[serde(default = "default_challenge_percentage")]
+    pub challenge_percentage: f64,
+}
+
+fn default_proof_interval() -> u64 {
+    21600
+}
+
+fn default_challenge_percentage() -> f64 {
+    0.1
+}
+
+impl Default for ProofSection {
+    fn default() -> Self {
+        Self {
+            interval_secs: default_proof_interval(),
+            challenge_percentage: default_challenge_percentage(),
+        }
+    }
+}
+
 /// Provider-specific configuration section
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderSection {
@@ -228,6 +259,7 @@ impl Default for ProviderConfig {
             auth: AuthSection::default(),
             tls: TlsSection::default(),
             wallet: WalletSection::default(),
+            proof: ProofSection::default(),
         }
     }
 }
@@ -343,6 +375,18 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_RPC_URL") {
             self.wallet.rpc_url = v;
+        }
+
+        // Proof scheduler overrides
+        if let Ok(v) = std::env::var("CARBIDE_PROOF_INTERVAL") {
+            if let Ok(secs) = v.parse::<u64>() {
+                self.proof.interval_secs = secs;
+            }
+        }
+        if let Ok(v) = std::env::var("CARBIDE_PROOF_CHALLENGE_PCT") {
+            if let Ok(pct) = v.parse::<f64>() {
+                self.proof.challenge_percentage = pct;
+            }
         }
     }
 

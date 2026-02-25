@@ -30,6 +30,7 @@
 pub mod auth;
 pub mod config;
 pub mod metrics;
+pub mod proof_scheduler;
 pub mod rate_limit;
 pub mod server;
 pub mod storage_db;

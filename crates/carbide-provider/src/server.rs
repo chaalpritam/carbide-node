@@ -304,14 +304,32 @@ impl ProviderServer {
         let heartbeat_interval = self.heartbeat_interval_secs;
 
         // Spawn registration & heartbeat loop if discovery is configured
-        if let Some(endpoint) = discovery_endpoint {
+        if let Some(ref endpoint) = discovery_endpoint {
             tokio::spawn(registration_loop(
-                endpoint,
+                endpoint.clone(),
                 provider,
                 stats,
                 key_pair,
                 heartbeat_interval,
             ));
+        }
+
+        // Spawn periodic proof-of-storage scheduler if discovery is configured
+        if let Some(ref endpoint) = discovery_endpoint {
+            let proof_config = crate::proof_scheduler::ProofSchedulerConfig {
+                interval_secs: 21600, // 6 hours default
+                challenge_percentage: 0.1,
+                discovery_endpoint: endpoint.clone(),
+                provider_id: self.provider.id.to_string(),
+            };
+            let scheduler = crate::proof_scheduler::ProofScheduler::new(
+                proof_config,
+                Arc::clone(&self.contracts),
+                Arc::clone(&self.files),
+                self.storage_dir.clone(),
+            );
+            scheduler.spawn();
+            info!("Proof-of-storage scheduler started");
         }
 
         // Create the router with all endpoints
