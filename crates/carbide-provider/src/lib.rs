@@ -35,6 +35,9 @@ pub mod server;
 pub mod storage_db;
 pub mod tls;
 
+#[cfg(feature = "blockchain")]
+pub mod contracts;
+
 // Re-exports for convenience
 pub use config::ProviderConfig;
 pub use server::{ProviderServer, ServerConfig};
