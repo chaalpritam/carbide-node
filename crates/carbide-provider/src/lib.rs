@@ -29,6 +29,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod discovery_client;
 pub mod metrics;
 pub mod proof_scheduler;
 pub mod rate_limit;
