@@ -2,6 +2,10 @@
 //!
 //! Command-line interface for interacting with the Carbide Network
 
+use std::path::PathBuf;
+
+use carbide_client::payment::{CreateContractRequest, PaymentClient};
+use carbide_client::wallet::ClientWallet;
 use carbide_client::CarbideClient;
 use carbide_core::network::*;
 use clap::Parser;
@@ -50,6 +54,102 @@ enum Command {
         /// Provider endpoints (comma-separated)
         #[arg(long)]
         providers: String,
+    },
+    /// Wallet management commands
+    Wallet {
+        #[command(subcommand)]
+        action: WalletAction,
+    },
+    /// Payment and contract commands
+    Pay {
+        #[command(subcommand)]
+        action: PayAction,
+    },
+}
+
+#[derive(Parser)]
+enum WalletAction {
+    /// Create a new wallet
+    Create {
+        /// Directory to store the wallet file
+        #[arg(long, default_value = ".carbide")]
+        wallet_dir: PathBuf,
+        /// Encryption password
+        #[arg(long)]
+        password: String,
+    },
+    /// Show wallet address
+    Show {
+        /// Path to the wallet file
+        #[arg(long, default_value = ".carbide/wallet.json")]
+        wallet_path: PathBuf,
+        /// Decryption password
+        #[arg(long)]
+        password: String,
+    },
+    /// Import wallet from mnemonic
+    Import {
+        /// BIP-39 mnemonic phrase
+        #[arg(long)]
+        mnemonic: String,
+        /// Directory to store the wallet file
+        #[arg(long, default_value = ".carbide")]
+        wallet_dir: PathBuf,
+        /// Encryption password
+        #[arg(long)]
+        password: String,
+    },
+}
+
+#[derive(Parser)]
+enum PayAction {
+    /// Create a storage contract
+    CreateContract {
+        /// Provider ID
+        #[arg(long)]
+        provider_id: String,
+        /// Client ID
+        #[arg(long)]
+        client_id: String,
+        /// Price per GB per month
+        #[arg(long)]
+        price: String,
+        /// Duration in days
+        #[arg(long, default_value = "30")]
+        duration_days: u32,
+        /// Discovery service endpoint
+        #[arg(long, default_value = "http://localhost:3000")]
+        discovery_endpoint: String,
+    },
+    /// Record a deposit on a contract
+    RecordDeposit {
+        /// Contract ID
+        #[arg(long)]
+        contract_id: String,
+        /// Deposit amount
+        #[arg(long)]
+        amount: String,
+        /// Discovery service endpoint
+        #[arg(long, default_value = "http://localhost:3000")]
+        discovery_endpoint: String,
+    },
+    /// List contracts
+    ListContracts {
+        /// Filter by client ID
+        #[arg(long)]
+        client_id: Option<String>,
+        /// Discovery service endpoint
+        #[arg(long, default_value = "http://localhost:3000")]
+        discovery_endpoint: String,
+    },
+    /// Show contract details
+    ShowContract {
+        /// Contract ID
+        #[arg(long)]
+        contract_id: String,
+        /// Discovery service endpoint
+        #[arg(long, default_value = "http://localhost:3000")]
+        discovery_endpoint: String,
     },
 }
 
@@ -186,6 +286,100 @@ async fn main() -> anyhow::Result<()> {
                 println!();
             }
         }
+
+        Command::Wallet { action } => match action {
+            WalletAction::Create {
+                wallet_dir,
+                password,
+            } => {
+                println!("Creating new wallet in {:?}...", wallet_dir);
+                let (wallet, mnemonic) = ClientWallet::create(&wallet_dir, &password)?;
+                println!("Wallet created!");
+                println!("  Address: {}", wallet.address_hex());
+                println!("  Saved to: {:?}", wallet.path());
+                println!();
+                println!("IMPORTANT - Save your recovery phrase:");
+                println!("  {}", mnemonic);
+                println!();
+                println!("This phrase is the ONLY way to recover your wallet.");
+            }
+            WalletAction::Show {
+                wallet_path,
+                password,
+            } => {
+                let wallet = ClientWallet::load(&wallet_path, &password)?;
+                println!("Wallet Address: {}", wallet.address_hex());
+            }
+            WalletAction::Import {
+                mnemonic,
+                wallet_dir,
+                password,
+            } => {
+                println!("Importing wallet from mnemonic...");
+                let wallet =
+                    ClientWallet::import_from_mnemonic(&wallet_dir, &mnemonic, &password)?;
+                println!("Wallet imported!");
+                println!("  Address: {}", wallet.address_hex());
+                println!("  Saved to: {:?}", wallet.path());
+            }
+        },
+
+        Command::Pay { action } => match action {
+            PayAction::CreateContract {
+                provider_id,
+                client_id,
+                price,
+                duration_days,
+                discovery_endpoint,
+            } => {
+                let payment = PaymentClient::new(&discovery_endpoint)?;
+                let contract = payment
+                    .create_contract(&CreateContractRequest {
+                        provider_id,
+                        client_id,
+                        price_per_gb_month: price,
+                        duration_days,
+                        total_size_bytes: None,
+                        file_id: None,
+                        chain_id: None,
+                    })
+                    .await?;
+                println!("Contract created:");
+                println!("{}", serde_json::to_string_pretty(&contract)?);
+            }
+            PayAction::RecordDeposit {
+                contract_id,
+                amount,
+                discovery_endpoint,
+            } => {
+                let payment = PaymentClient::new(&discovery_endpoint)?;
+                let contract = payment.record_deposit(&contract_id, &amount, None).await?;
+                println!("Deposit recorded:");
+                println!("{}", serde_json::to_string_pretty(&contract)?);
+            }
+            PayAction::ListContracts {
+                client_id,
+                discovery_endpoint,
+            } => {
+                let payment = PaymentClient::new(&discovery_endpoint)?;
+                let contracts = payment.list_contracts(client_id.as_deref()).await?;
+                println!("Contracts ({}): ", contracts.len());
+                for c in &contracts {
+                    println!(
+                        "  {} | {} | {} | {}",
+                        c.id, c.status, c.price_per_gb_month, c.created_at
+                    );
+                }
+            }
+            PayAction::ShowContract {
+                contract_id,
+                discovery_endpoint,
+            } => {
+                let payment = PaymentClient::new(&discovery_endpoint)?;
+                let contract = payment.get_contract(&contract_id).await?;
+                println!("{}", serde_json::to_string_pretty(&contract)?);
+            }
+        },
     }
 
     Ok(())
