@@ -106,6 +106,42 @@ impl ChainConfig {
         }
     }
 
+    /// Load chain configuration from environment variables.
+    ///
+    /// Reads: `CARBIDE_CHAIN_ID`, `CARBIDE_RPC_URL`, `CARBIDE_ESCROW_ADDRESS`,
+    /// `CARBIDE_USDC_ADDRESS`. Falls back to Arbitrum Sepolia defaults for
+    /// chain_id, name, rpc_url, and explorer_url if not set.
+    pub fn from_env() -> Self {
+        let chain_id: u64 = std::env::var("CARBIDE_CHAIN_ID")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(421614);
+
+        let rpc_url = std::env::var("CARBIDE_RPC_URL")
+            .unwrap_or_else(|_| "https://sepolia-rollup.arbitrum.io/rpc".to_string());
+
+        let escrow_address = std::env::var("CARBIDE_ESCROW_ADDRESS")
+            .unwrap_or_default();
+
+        let usdc_address = std::env::var("CARBIDE_USDC_ADDRESS")
+            .unwrap_or_default();
+
+        let (name, explorer_url) = match chain_id {
+            42161 => ("Arbitrum One".to_string(), "https://arbiscan.io".to_string()),
+            421614 => ("Arbitrum Sepolia".to_string(), "https://sepolia.arbiscan.io".to_string()),
+            _ => (format!("Chain {}", chain_id), String::new()),
+        };
+
+        Self {
+            chain_id,
+            name,
+            rpc_url,
+            explorer_url,
+            usdc_address,
+            escrow_address,
+        }
+    }
+
     /// Arbitrum One mainnet configuration
     pub fn arbitrum_one() -> Self {
         Self {
@@ -132,4 +168,57 @@ pub struct PaymentInstructions {
     pub total_amount: String,
     /// Chain ID to use
     pub chain_id: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chain_config_from_env() {
+        // Set known env vars, test them, then clean up — all in one test
+        // to avoid parallel test env-var races.
+        std::env::set_var("CARBIDE_CHAIN_ID", "42161");
+        std::env::set_var("CARBIDE_RPC_URL", "https://arb1.example.com/rpc");
+        std::env::set_var("CARBIDE_ESCROW_ADDRESS", "0x1234567890abcdef1234567890abcdef12345678");
+        std::env::set_var("CARBIDE_USDC_ADDRESS", "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+
+        let config = ChainConfig::from_env();
+        assert_eq!(config.chain_id, 42161);
+        assert_eq!(config.name, "Arbitrum One");
+        assert_eq!(config.rpc_url, "https://arb1.example.com/rpc");
+        assert_eq!(config.explorer_url, "https://arbiscan.io");
+        assert_eq!(config.escrow_address, "0x1234567890abcdef1234567890abcdef12345678");
+        assert_eq!(config.usdc_address, "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+
+        // Clean up and test defaults
+        std::env::remove_var("CARBIDE_CHAIN_ID");
+        std::env::remove_var("CARBIDE_RPC_URL");
+        std::env::remove_var("CARBIDE_ESCROW_ADDRESS");
+        std::env::remove_var("CARBIDE_USDC_ADDRESS");
+
+        let defaults = ChainConfig::from_env();
+        assert_eq!(defaults.chain_id, 421614);
+        assert_eq!(defaults.name, "Arbitrum Sepolia");
+        assert_eq!(defaults.rpc_url, "https://sepolia-rollup.arbitrum.io/rpc");
+        assert!(defaults.escrow_address.is_empty());
+        assert!(defaults.usdc_address.is_empty());
+    }
+
+    #[test]
+    fn test_payment_status_display_roundtrip() {
+        let statuses = [
+            PaymentStatus::None,
+            PaymentStatus::AwaitingDeposit,
+            PaymentStatus::Deposited,
+            PaymentStatus::PartiallyReleased,
+            PaymentStatus::FullyReleased,
+            PaymentStatus::Refunded,
+            PaymentStatus::Disputed,
+        ];
+        for status in &statuses {
+            let s = status.to_string();
+            assert_eq!(PaymentStatus::from_str_lossy(&s), *status);
+        }
+    }
 }
