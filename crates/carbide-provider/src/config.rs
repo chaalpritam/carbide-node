@@ -391,4 +391,54 @@ mod tests {
         std::env::remove_var("CARBIDE_PROVIDER_PORT");
         std::env::remove_var("CARBIDE_LOG_LEVEL");
     }
+
+    #[test]
+    fn test_validate_default_config_passes() {
+        let config = ProviderConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_empty_name() {
+        let mut config = ProviderConfig::default();
+        config.provider.name = "".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_capacity() {
+        let mut config = ProviderConfig::default();
+        config.provider.max_storage_gb = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_negative_price() {
+        let mut config = ProviderConfig::default();
+        config.pricing.price_per_gb_month = -1.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_low_heartbeat() {
+        let mut config = ProviderConfig::default();
+        config.network.heartbeat_interval_secs = 5;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_auth_enabled_no_secret() {
+        let mut config = ProviderConfig::default();
+        config.auth.enabled = true;
+        config.auth.jwt_secret = None;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_auth_enabled_with_secret() {
+        let mut config = ProviderConfig::default();
+        config.auth.enabled = true;
+        config.auth.jwt_secret = Some("my-secret".to_string());
+        assert!(config.validate().is_ok());
+    }
 }
