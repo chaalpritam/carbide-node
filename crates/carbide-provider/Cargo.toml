@@ -44,6 +44,9 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+# Database
+rusqlite = { workspace = true }
+
 # Auth
 jsonwebtoken = { workspace = true }
 hex = { workspace = true }

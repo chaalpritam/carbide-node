@@ -25,6 +25,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{info, warn};
 
 use crate::auth::{auth_middleware, AuthConfig, AuthState};
+use crate::storage_db::StorageDb;
 use crate::tls::TlsConfig;
 
 /// Provider server configuration
@@ -79,6 +80,8 @@ pub struct ProviderServer {
     auth_config: AuthConfig,
     /// TLS configuration
     tls_config: TlsConfig,
+    /// SQLite database for persistent metadata (None = in-memory only)
+    db: Option<Arc<StorageDb>>,
 }
 
 /// Information about a stored file
@@ -120,7 +123,11 @@ pub struct StorageStats {
 }
 
 impl ProviderServer {
-    /// Create a new provider server
+    /// Create a new provider server.
+    ///
+    /// If `db_path` is `Some`, file and contract metadata is persisted to SQLite
+    /// and restored on startup.  Pass `None` for a purely in-memory instance
+    /// (useful for tests and the quick-start CLI mode).
     pub fn new(
         config: ServerConfig,
         provider: Provider,
@@ -130,6 +137,7 @@ impl ProviderServer {
         heartbeat_interval_secs: u64,
         auth_config: AuthConfig,
         tls_config: TlsConfig,
+        db_path: Option<&std::path::Path>,
     ) -> Result<Self> {
         let storage_dir = storage_path.join(provider.id.to_string());
 
@@ -141,12 +149,61 @@ impl ProviderServer {
             ))
         })?;
 
+        // Open SQLite database if a path was provided
+        let db = match db_path {
+            Some(p) => {
+                // Ensure parent directory exists
+                if let Some(parent) = p.parent() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        CarbideError::Internal(format!(
+                            "Failed to create database directory {}: {e}",
+                            parent.display()
+                        ))
+                    })?;
+                }
+                let db = StorageDb::open(p).map_err(|e| {
+                    CarbideError::Internal(format!("Failed to open storage database: {e}"))
+                })?;
+                Some(Arc::new(db))
+            }
+            None => None,
+        };
+
+        // Warm in-memory caches from the database
+        let mut files_map = HashMap::new();
+        let mut contracts_map = HashMap::new();
+        let mut total_bytes: u64 = 0;
+
+        if let Some(ref db) = db {
+            if let Ok(stored) = db.load_all_files() {
+                for f in stored {
+                    total_bytes += f.size;
+                    files_map.insert(f.file_id, f);
+                }
+            }
+            if let Ok(contracts) = db.load_all_contracts() {
+                for c in contracts {
+                    contracts_map.insert(c.id, c);
+                }
+            }
+            info!(
+                "Restored {} files and {} contracts from database",
+                files_map.len(),
+                contracts_map.len()
+            );
+        }
+
+        let active_contracts = contracts_map
+            .values()
+            .filter(|c| matches!(c.status, ContractStatus::Active))
+            .count();
+
         let stats = StorageStats {
-            total_files: 0,
-            total_bytes_stored: 0,
-            available_space: provider.available_capacity,
+            total_files: files_map.len(),
+            total_bytes_stored: total_bytes,
+            available_space: provider.total_capacity.saturating_sub(total_bytes),
             total_capacity: provider.total_capacity,
-            active_contracts: 0,
+            active_contracts,
             server_start_time: Utc::now(),
             last_health_check: Utc::now(),
         };
@@ -154,8 +211,8 @@ impl ProviderServer {
         Ok(Self {
             config,
             provider,
-            files: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            contracts: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            files: Arc::new(tokio::sync::RwLock::new(files_map)),
+            contracts: Arc::new(tokio::sync::RwLock::new(contracts_map)),
             stats: Arc::new(tokio::sync::RwLock::new(stats)),
             storage_dir,
             discovery_endpoint,
@@ -163,6 +220,7 @@ impl ProviderServer {
             heartbeat_interval_secs,
             auth_config,
             tls_config,
+            db,
         })
     }
 
@@ -500,7 +558,12 @@ async fn store_file_request(
                     last_proof_at: None,
                 };
 
-                // Store the contract
+                // Store the contract (in-memory + SQLite)
+                if let Some(ref db) = server.db {
+                    if let Err(e) = db.insert_contract(&contract) {
+                        tracing::error!("Failed to persist contract to database: {}", e);
+                    }
+                }
                 server
                     .contracts
                     .write()
@@ -615,7 +678,12 @@ async fn upload_file(
         is_encrypted: false,
     };
 
-    // Update server state
+    // Update server state (in-memory + SQLite)
+    if let Some(ref db) = server.db {
+        if let Err(e) = db.insert_file(&stored_file) {
+            tracing::error!("Failed to persist file record to database: {}", e);
+        }
+    }
     server.files.write().await.insert(file_id, stored_file);
 
     let mut stats = server.stats.write().await;
@@ -700,6 +768,13 @@ async fn delete_file(
         if let Err(e) = server.delete_file_from_disk(&file_hash).await {
             tracing::error!("Failed to delete file from disk: {}", e);
             // Continue with removal from memory even if disk deletion fails
+        }
+
+        // Remove from database
+        if let Some(ref db) = server.db {
+            if let Err(e) = db.delete_file(&file_hash) {
+                tracing::error!("Failed to delete file record from database: {}", e);
+            }
         }
 
         // Update statistics
@@ -975,7 +1050,7 @@ mod tests {
         );
 
         let storage_path = PathBuf::from("./test_storage");
-        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60, Default::default(), Default::default()).unwrap();
+        let server = ProviderServer::new(config, provider.clone(), storage_path, None, None, 60, Default::default(), Default::default(), None).unwrap();
 
         assert_eq!(server.provider.name, "Test Provider");
         assert_eq!(server.provider.tier, ProviderTier::Home);

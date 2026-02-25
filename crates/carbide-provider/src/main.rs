@@ -203,7 +203,8 @@ async fn main() -> Result<()> {
 
             // Create and start the server (no discovery or key pair in quick-start mode)
             let storage_path = PathBuf::from("./storage");
-            let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default(), Default::default())?;
+            let db_path = storage_path.join("provider.db");
+            let server = ProviderServer::new(config, provider, storage_path, None, None, 60, Default::default(), Default::default(), Some(&db_path))?;
 
             // Start server in background task
             let server_handle = tokio::spawn(async move {
@@ -370,7 +371,8 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         auto_generate: config.tls.auto_generate,
     };
 
-    // Create and start the server
+    // Create and start the server (with SQLite persistence)
+    let db_path = config.provider.storage_path.join("provider.db");
     let server = ProviderServer::new(
         server_config,
         provider,
@@ -380,6 +382,7 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         config.network.heartbeat_interval_secs,
         auth_config,
         tls_config,
+        Some(&db_path),
     )?;
 
     // Start server in background task (registration_loop is spawned inside start())

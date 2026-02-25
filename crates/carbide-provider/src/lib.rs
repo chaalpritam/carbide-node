@@ -30,6 +30,7 @@
 pub mod auth;
 pub mod config;
 pub mod server;
+pub mod storage_db;
 pub mod tls;
 
 // Re-exports for convenience

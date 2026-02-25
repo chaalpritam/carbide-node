@@ -61,6 +61,7 @@ aes-gcm = "0.10"
 
 # Database and storage
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 rocksdb = "0.21"
 
 # Utilities
