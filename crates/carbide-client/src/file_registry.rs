@@ -47,6 +47,12 @@ pub struct FileRegistry {
     conn: Mutex<Connection>,
 }
 
+impl std::fmt::Debug for FileRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileRegistry").finish()
+    }
+}
+
 impl FileRegistry {
     /// Open (or create) a file registry database at the given path.
     pub fn open(path: &Path) -> Result<Self, String> {

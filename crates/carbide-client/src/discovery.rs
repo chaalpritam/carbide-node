@@ -560,6 +560,81 @@ impl DiscoveryClient {
         Ok(())
     }
 
+    /// Create a storage contract on the discovery service.
+    pub async fn create_contract(
+        &self,
+        client_id: &str,
+        provider_id: &str,
+        file_id: &str,
+        file_size: u64,
+        price: &str,
+        duration_months: u32,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}/api/v1/contracts", self.endpoint);
+        let body = serde_json::json!({
+            "client_id": client_id,
+            "provider_id": provider_id,
+            "file_id": file_id,
+            "file_size": file_size,
+            "price_per_gb_month": price,
+            "duration_months": duration_months,
+        });
+
+        let response = self
+            .client
+            .http_client()
+            .post(&url)
+            .json(&body)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| CarbideError::Discovery(format!("Create contract failed: {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(CarbideError::Discovery(format!(
+                "Create contract returned: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| CarbideError::Discovery(format!("Failed to parse contract: {e}")))
+    }
+
+    /// Activate a contract by recording a deposit on the discovery service.
+    pub async fn activate_contract(
+        &self,
+        contract_id: &str,
+        amount: &str,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}/api/v1/contracts/{}/deposit", self.endpoint, contract_id);
+        let body = serde_json::json!({ "amount": amount });
+
+        let response = self
+            .client
+            .http_client()
+            .post(&url)
+            .json(&body)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| CarbideError::Discovery(format!("Activate contract failed: {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(CarbideError::Discovery(format!(
+                "Activate contract returned: {}",
+                response.status()
+            )));
+        }
+
+        response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| CarbideError::Discovery(format!("Failed to parse deposit: {e}")))
+    }
+
     /// Health check of the discovery service
     pub async fn health_check(&self) -> Result<HealthCheckResponse> {
         let url = format!("{}/api/v1/health", self.endpoint);
@@ -622,5 +697,25 @@ mod tests {
 
         // Just test that creation works
         assert_eq!(discovery.endpoint, "http://localhost:9090");
+    }
+
+    #[test]
+    fn test_create_contract_serialization() {
+        // Verify the JSON body shape matches what the discovery service expects
+        let body = serde_json::json!({
+            "client_id": "client-1",
+            "provider_id": "provider-1",
+            "file_id": "abc123",
+            "file_size": 1024_u64,
+            "price_per_gb_month": "0.005",
+            "duration_months": 12_u32,
+        });
+
+        assert_eq!(body["client_id"], "client-1");
+        assert_eq!(body["provider_id"], "provider-1");
+        assert_eq!(body["file_id"], "abc123");
+        assert_eq!(body["file_size"], 1024);
+        assert_eq!(body["price_per_gb_month"], "0.005");
+        assert_eq!(body["duration_months"], 12);
     }
 }

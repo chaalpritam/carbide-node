@@ -13,6 +13,7 @@ use carbide_crypto::{EncryptedData, FileDecryptor, FileEncryptor, KeyManager};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
+use crate::file_registry::{FileRecord, FileRegistry, ProviderLocation as RegistryProviderLocation};
 use crate::CarbideClient;
 
 /// High-level storage manager that handles provider discovery,
@@ -27,6 +28,10 @@ pub struct StorageManager {
     preferences: StoragePreferences,
     /// Optional key manager for client-side encryption
     key_manager: Option<KeyManager>,
+    /// Optional local file registry for persistence
+    file_registry: Option<std::sync::Arc<FileRegistry>>,
+    /// Client identity for contract creation
+    client_id: String,
 }
 
 /// Storage preferences for automatic provider selection
@@ -127,6 +132,8 @@ impl StorageManager {
             discovery_endpoint,
             preferences: StoragePreferences::default(),
             key_manager: None,
+            file_registry: None,
+            client_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 
@@ -141,6 +148,8 @@ impl StorageManager {
             discovery_endpoint,
             preferences,
             key_manager: None,
+            file_registry: None,
+            client_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 
@@ -155,7 +164,19 @@ impl StorageManager {
             discovery_endpoint,
             preferences: StoragePreferences::default(),
             key_manager: Some(key_manager),
+            file_registry: None,
+            client_id: uuid::Uuid::new_v4().to_string(),
         }
+    }
+
+    /// Attach a file registry for local persistence of upload records.
+    pub fn set_file_registry(&mut self, registry: std::sync::Arc<FileRegistry>) {
+        self.file_registry = Some(registry);
+    }
+
+    /// Set the client identity used for contract creation.
+    pub fn set_client_id(&mut self, client_id: String) {
+        self.client_id = client_id;
     }
 
     /// Store file data in the network with automatic provider selection
@@ -361,6 +382,36 @@ impl StorageManager {
             tokio::spawn(async move {
                 let _ = http.post(&url).json(&body).send().await;
             });
+        }
+
+        // Record in local file registry if available
+        if let Some(ref registry) = self.file_registry {
+            let provider_locations: Vec<RegistryProviderLocation> = storage_locations
+                .iter()
+                .map(|loc| RegistryProviderLocation {
+                    provider_id: loc.provider.id.to_string(),
+                    endpoint: loc.provider.endpoint.clone(),
+                    contract_id: loc
+                        .contract
+                        .as_ref()
+                        .map(|c| c.id.to_string())
+                        .unwrap_or_default(),
+                })
+                .collect();
+
+            let record = FileRecord {
+                file_id: file_id.to_hex(),
+                original_name: file_id.to_hex(),
+                file_size: data.len() as u64,
+                is_encrypted,
+                replication_factor: storage_locations.len() as u8,
+                providers: serde_json::to_string(&provider_locations).unwrap_or_default(),
+                status: "active".to_string(),
+                stored_at: chrono::Utc::now().to_rfc3339(),
+            };
+            if let Err(e) = registry.record_upload(&record) {
+                warn!("Failed to record upload in file registry: {}", e);
+            }
         }
 
         Ok(StoreResult {
