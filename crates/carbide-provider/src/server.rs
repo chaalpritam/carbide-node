@@ -597,6 +597,25 @@ async fn store_file_request(
         MessageType::StoreFileRequest(ref request) => {
             info!("Received store file request for {}", request.file_id);
 
+            // Input validation
+            if request.file_size == 0 {
+                warn!("Rejected store request: file_size is 0");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024 * 1024 * 1024; // 10 TB
+            if request.file_size > MAX_FILE_SIZE {
+                warn!("Rejected store request: file_size {} exceeds 10TB limit", request.file_size);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            if request.duration_months == 0 || request.duration_months > 120 {
+                warn!("Rejected store request: duration_months {} out of range 1-120", request.duration_months);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            if request.max_price <= rust_decimal::Decimal::ZERO {
+                warn!("Rejected store request: max_price must be positive");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+
             // Check if we can accept the file
             let stats = server.stats.read().await;
 
@@ -718,6 +737,17 @@ async fn upload_file(
 
     // Verify the file_id matches the contract
     if contract.file_id != file_id {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Content-addressable integrity: verify uploaded data hashes to the declared file_id
+    let computed_hash = ContentHash::from_data(&file_data);
+    if computed_hash != file_id {
+        warn!(
+            declared = %file_id.to_hex(),
+            computed = %computed_hash.to_hex(),
+            "Upload rejected: content hash mismatch"
+        );
         return Err(StatusCode::BAD_REQUEST);
     }
 
