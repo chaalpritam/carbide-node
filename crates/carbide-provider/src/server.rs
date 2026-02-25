@@ -26,6 +26,7 @@ use tracing::{info, warn};
 
 use crate::auth::{auth_middleware, AuthConfig, AuthState};
 use crate::metrics;
+use crate::rate_limit::RateLimitState;
 use crate::storage_db::StorageDb;
 use crate::tls::TlsConfig;
 
@@ -355,6 +356,10 @@ impl ProviderServer {
         let auth_state = Arc::new(AuthState {
             config: self.auth_config.clone(),
         });
+
+        // Per-IP rate limiter: 30 requests/second
+        let rate_limit = RateLimitState::new(30);
+
         let server_state = Arc::new(self);
 
         // Public routes — health, status, and metrics (no auth required)
@@ -373,6 +378,10 @@ impl ProviderServer {
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
+            .route_layer(middleware::from_fn_with_state(
+                rate_limit,
+                crate::rate_limit::rate_limit_middleware,
+            ))
             .route_layer(middleware::from_fn_with_state(
                 auth_state,
                 auth_middleware,

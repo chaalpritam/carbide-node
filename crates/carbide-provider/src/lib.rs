@@ -30,6 +30,7 @@
 pub mod auth;
 pub mod config;
 pub mod metrics;
+pub mod rate_limit;
 pub mod server;
 pub mod storage_db;
 pub mod tls;

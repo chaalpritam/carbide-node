@@ -51,6 +51,9 @@ rusqlite = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
 
+# Rate limiting
+dashmap = { workspace = true }
+
 # Auth
 jsonwebtoken = { workspace = true }
 hex = { workspace = true }
