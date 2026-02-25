@@ -553,8 +553,28 @@ impl StorageManager {
         )))
     }
 
-    /// Look up providers that hold a file via discovery service, falling back to localhost
+    /// Look up providers that hold a file.
+    ///
+    /// Resolution order:
+    /// 1. Local file registry (instant, no network)
+    /// 2. Discovery service GET /api/v1/files/:fileId/providers
+    /// 3. Fallback to localhost (dev/testing)
     async fn lookup_file_providers(&self, file_id: &FileId) -> Vec<String> {
+        // 1. Check local file registry first (instant, no network)
+        if let Some(ref registry) = self.file_registry {
+            if let Ok(providers) = registry.get_providers_for_file(&file_id.to_hex()) {
+                if !providers.is_empty() {
+                    info!(
+                        "Found {} providers in local registry for file {}",
+                        providers.len(),
+                        file_id
+                    );
+                    return providers.into_iter().map(|p| p.endpoint).collect();
+                }
+            }
+        }
+
+        // 2. Ask discovery service
         let url = format!(
             "{}/api/v1/files/{}/providers",
             self.discovery_endpoint,
@@ -591,12 +611,22 @@ impl StorageManager {
             }
         }
 
-        // Fallback to hardcoded test providers for backward compatibility
+        // 3. Fallback to hardcoded test providers for backward compatibility
         vec![
             "http://localhost:8080".to_string(),
             "http://localhost:8081".to_string(),
             "http://localhost:8082".to_string(),
         ]
+    }
+
+    /// List all files stored in the local registry.
+    pub fn list_stored_files(&self, status: Option<&str>) -> Result<Vec<FileRecord>> {
+        match &self.file_registry {
+            Some(registry) => registry
+                .list_files(status)
+                .map_err(|e| CarbideError::Internal(format!("File registry error: {e}"))),
+            None => Ok(vec![]),
+        }
     }
 
     /// Decrypt data if key_manager is present, attempting to deserialize as EncryptedData

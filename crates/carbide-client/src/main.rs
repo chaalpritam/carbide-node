@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use carbide_client::file_registry::FileRegistry;
 use carbide_client::payment::{CreateContractRequest, PaymentClient};
 use carbide_client::wallet::ClientWallet;
 use carbide_client::CarbideClient;
@@ -64,6 +65,11 @@ enum Command {
     Pay {
         #[command(subcommand)]
         action: PayAction,
+    },
+    /// File registry commands
+    Files {
+        #[command(subcommand)]
+        action: FilesAction,
     },
 }
 
@@ -150,6 +156,28 @@ enum PayAction {
         /// Discovery service endpoint
         #[arg(long, default_value = "http://localhost:3000")]
         discovery_endpoint: String,
+    },
+}
+
+#[derive(Parser)]
+enum FilesAction {
+    /// List stored files
+    List {
+        /// Filter by status (active, expired, deleted)
+        #[arg(long)]
+        status: Option<String>,
+        /// Path to the file registry database
+        #[arg(long, default_value = ".carbide/files.db")]
+        db_path: PathBuf,
+    },
+    /// Show details of a specific file
+    Show {
+        /// File ID (content hash hex)
+        #[arg(long)]
+        file_id: String,
+        /// Path to the file registry database
+        #[arg(long, default_value = ".carbide/files.db")]
+        db_path: PathBuf,
     },
 }
 
@@ -321,6 +349,42 @@ async fn main() -> anyhow::Result<()> {
                 println!("Wallet imported!");
                 println!("  Address: {}", wallet.address_hex());
                 println!("  Saved to: {:?}", wallet.path());
+            }
+        },
+
+        Command::Files { action } => match action {
+            FilesAction::List { status, db_path } => {
+                let registry = FileRegistry::open(&db_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to open registry: {}", e))?;
+                let files = registry
+                    .list_files(status.as_deref())
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                if files.is_empty() {
+                    println!("No files found.");
+                } else {
+                    println!("Files ({}):", files.len());
+                    for f in &files {
+                        println!(
+                            "  {} | {} | {} bytes | {}",
+                            f.file_id, f.original_name, f.file_size, f.status
+                        );
+                    }
+                }
+            }
+            FilesAction::Show { file_id, db_path } => {
+                let registry = FileRegistry::open(&db_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to open registry: {}", e))?;
+                match registry.get_file(&file_id) {
+                    Ok(Some(file)) => {
+                        println!("{}", serde_json::to_string_pretty(&file)?);
+                    }
+                    Ok(None) => {
+                        println!("File not found: {}", file_id);
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                    }
+                }
             }
         },
 
