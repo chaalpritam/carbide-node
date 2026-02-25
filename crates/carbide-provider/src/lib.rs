@@ -37,6 +37,8 @@ pub mod tls;
 
 #[cfg(feature = "blockchain")]
 pub mod contracts;
+#[cfg(feature = "blockchain")]
+pub mod payment;
 
 // Re-exports for convenience
 pub use config::ProviderConfig;
