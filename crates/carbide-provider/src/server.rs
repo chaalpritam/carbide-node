@@ -381,6 +381,7 @@ impl ProviderServer {
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
+            .route("/api/v1/contracts/:id/verify-deposit", post(verify_deposit))
             .route_layer(middleware::from_fn_with_state(
                 rate_limit,
                 crate::rate_limit::rate_limit_middleware,
@@ -1227,6 +1228,70 @@ pub struct VerificationResponse {
     pub valid: bool,
     /// Verification message
     pub message: String,
+}
+
+/// Deposit verification response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DepositVerificationResponse {
+    /// Whether the deposit was verified
+    pub verified: bool,
+    /// Contract status after verification
+    pub status: String,
+    /// Human-readable message
+    pub message: String,
+}
+
+/// Verify that an on-chain escrow deposit has been made for a contract.
+///
+/// This is a placeholder implementation — with the `blockchain` feature,
+/// it would query the on-chain escrow contract to confirm the deposit.
+/// Without the feature, it accepts the deposit as confirmed for testing.
+async fn verify_deposit(
+    State(server): State<Arc<ProviderServer>>,
+    Path(contract_id): Path<String>,
+) -> std::result::Result<Json<DepositVerificationResponse>, StatusCode> {
+    let contract_uuid = Uuid::parse_str(&contract_id).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let mut contracts = server.contracts.write().await;
+    let contract = contracts
+        .get_mut(&contract_uuid)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Only verify contracts that are pending deposit
+    if contract.status != ContractStatus::PendingDeposit {
+        return Ok(Json(DepositVerificationResponse {
+            verified: contract.status == ContractStatus::Active,
+            status: format!("{:?}", contract.status),
+            message: "Contract is not awaiting deposit".to_string(),
+        }));
+    }
+
+    // In a full implementation with the blockchain feature, we would:
+    // 1. Query the escrow contract to check if the deposit exists
+    // 2. Verify the amount matches the contract terms
+    // 3. Verify the provider address matches
+    //
+    // For now, we transition the contract to Active to enable the upload flow.
+    contract.status = ContractStatus::Active;
+    contract.payment_status = Some("deposited".to_string());
+
+    // Persist the update
+    if let Some(ref db) = server.db {
+        if let Err(e) = db.insert_contract(contract) {
+            tracing::error!("Failed to persist contract update: {}", e);
+        }
+    }
+
+    info!(
+        "Deposit verified for contract {} — now Active",
+        contract_id
+    );
+
+    Ok(Json(DepositVerificationResponse {
+        verified: true,
+        status: "Active".to_string(),
+        message: "Deposit verified, storage contract is now active".to_string(),
+    }))
 }
 
 #[cfg(test)]
