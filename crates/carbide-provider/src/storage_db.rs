@@ -58,7 +58,13 @@ impl StorageDb {
                 duration_months INTEGER NOT NULL,
                 started_at      TEXT NOT NULL,
                 status          TEXT NOT NULL DEFAULT 'active',
-                last_proof_at   TEXT
+                last_proof_at   TEXT,
+                client_address  TEXT,
+                provider_address TEXT,
+                escrow_id       INTEGER,
+                payment_status  TEXT,
+                total_escrowed  TEXT,
+                total_released  TEXT
             );",
         )?;
 
@@ -141,8 +147,9 @@ impl StorageDb {
         let conn = self.conn.lock().expect("db lock poisoned");
         conn.execute(
             "INSERT OR REPLACE INTO storage_contracts
-                (id, request_id, file_id, provider_id, price_per_gb, duration_months, started_at, status, last_proof_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                (id, request_id, file_id, provider_id, price_per_gb, duration_months, started_at, status, last_proof_at,
+                 client_address, provider_address, escrow_id, payment_status, total_escrowed, total_released)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 c.id.to_string(),
                 c.request_id.to_string(),
@@ -153,6 +160,12 @@ impl StorageDb {
                 c.started_at.to_rfc3339(),
                 status_to_str(&c.status),
                 c.last_proof_at.map(|t| t.to_rfc3339()),
+                c.client_address,
+                c.provider_address,
+                c.escrow_id.map(|id| id as i64),
+                c.payment_status,
+                c.total_escrowed,
+                c.total_released,
             ],
         )?;
         Ok(())
@@ -163,7 +176,9 @@ impl StorageDb {
         let conn = self.conn.lock().expect("db lock poisoned");
         let mut stmt = conn.prepare(
             "SELECT id, request_id, file_id, provider_id, price_per_gb,
-                    duration_months, started_at, status, last_proof_at
+                    duration_months, started_at, status, last_proof_at,
+                    client_address, provider_address, escrow_id,
+                    payment_status, total_escrowed, total_released
              FROM storage_contracts",
         )?;
 
@@ -176,6 +191,7 @@ impl StorageDb {
             let started_at_str: String = row.get(6)?;
             let status_str: String = row.get(7)?;
             let last_proof_str: Option<String> = row.get(8)?;
+            let escrow_id_raw: Option<i64> = row.get(11)?;
 
             Ok(StorageContract {
                 id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::new_v4()),
@@ -196,6 +212,12 @@ impl StorageDb {
                         .map(|dt| dt.with_timezone(&Utc))
                         .ok()
                 }),
+                client_address: row.get(9)?,
+                provider_address: row.get(10)?,
+                escrow_id: escrow_id_raw.map(|v| v as u64),
+                payment_status: row.get(12)?,
+                total_escrowed: row.get(13)?,
+                total_released: row.get(14)?,
             })
         })?;
 
@@ -209,18 +231,22 @@ impl StorageDb {
 
 fn status_to_str(status: &ContractStatus) -> &'static str {
     match status {
+        ContractStatus::PendingDeposit => "pending_deposit",
         ContractStatus::Active => "active",
         ContractStatus::Completed => "completed",
         ContractStatus::Cancelled => "cancelled",
         ContractStatus::Failed => "failed",
+        ContractStatus::Disputed => "disputed",
     }
 }
 
 fn str_to_status(s: &str) -> ContractStatus {
     match s {
+        "pending_deposit" => ContractStatus::PendingDeposit,
         "completed" => ContractStatus::Completed,
         "cancelled" => ContractStatus::Cancelled,
         "failed" => ContractStatus::Failed,
+        "disputed" => ContractStatus::Disputed,
         _ => ContractStatus::Active,
     }
 }
@@ -274,6 +300,12 @@ mod tests {
             started_at: Utc::now(),
             status: ContractStatus::Active,
             last_proof_at: None,
+            client_address: None,
+            provider_address: None,
+            escrow_id: None,
+            payment_status: None,
+            total_escrowed: None,
+            total_released: None,
         };
 
         db.insert_contract(&contract).unwrap();

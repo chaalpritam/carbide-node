@@ -467,6 +467,7 @@ async fn registration_loop(
             endpoint: provider.endpoint.clone(),
             supported_versions: vec!["1.0.0".to_string()],
             public_key,
+            wallet_address: provider.wallet_address.clone(),
         };
 
         match http_client
@@ -634,6 +635,12 @@ async fn store_file_request(
                     started_at: Utc::now(),
                     status: ContractStatus::Active,
                     last_proof_at: None,
+                    client_address: None,
+                    provider_address: server.provider.wallet_address.clone(),
+                    escrow_id: None,
+                    payment_status: None,
+                    total_escrowed: None,
+                    total_released: None,
                 };
 
                 // Store the contract (in-memory + SQLite) and update metrics
@@ -661,6 +668,7 @@ async fn store_file_request(
                     upload_token: Some(upload_token),
                     rejection_reason: None,
                     counter_offer_price: None,
+                    payment_instructions: None,
                 }
             } else {
                 // Reject the storage request
@@ -677,6 +685,7 @@ async fn store_file_request(
                     upload_token: None,
                     rejection_reason: Some(rejection_reason.to_string()),
                     counter_offer_price: Some(server.provider.price_per_gb_month),
+                    payment_instructions: None,
                 }
             };
 

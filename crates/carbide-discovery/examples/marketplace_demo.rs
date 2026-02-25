@@ -107,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint: provider.endpoint.clone(),
             supported_versions: vec!["1.0".to_string()],
             public_key: Some("mock_public_key".to_string()),
+            wallet_address: None,
         };
 
         let register_response = client

@@ -118,6 +118,8 @@ pub struct ProviderAnnouncement {
     pub supported_versions: Vec<String>,
     /// Public key for verification
     pub public_key: Option<String>,
+    /// Ethereum wallet address for payments
+    pub wallet_address: Option<String>,
 }
 
 /// Request for available providers in a region
@@ -180,6 +182,8 @@ pub struct StoreFileResponse {
     pub rejection_reason: Option<String>,
     /// Alternative price suggestion
     pub counter_offer_price: Option<rust_decimal::Decimal>,
+    /// Payment instructions for the client (escrow deposit details)
+    pub payment_instructions: Option<crate::payment::PaymentInstructions>,
 }
 
 /// Request to retrieve a stored file

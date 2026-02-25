@@ -33,6 +33,14 @@ pub enum CarbideError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Payment and escrow errors
+    #[error("Payment error: {0}")]
+    Payment(String),
+
+    /// Wallet errors
+    #[error("Wallet error: {0}")]
+    Wallet(String),
+
     /// Generic internal errors
     #[error("Internal error: {0}")]
     Internal(String),

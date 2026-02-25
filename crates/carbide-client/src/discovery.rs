@@ -535,6 +535,7 @@ impl DiscoveryClient {
             endpoint: provider.endpoint.clone(),
             supported_versions: vec!["1.0".to_string()],
             public_key: None,
+            wallet_address: provider.wallet_address.clone(),
         };
 
         debug!("Registering provider: {}", provider.name);

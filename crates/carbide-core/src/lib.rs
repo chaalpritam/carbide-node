@@ -32,10 +32,11 @@ pub use chrono::{DateTime, Utc};
 pub use rust_decimal::Decimal;
 pub use uuid::Uuid;
 
-// Core modules - we'll implement these in the next steps
+// Core modules
 pub mod crypto;
 pub mod error;
 pub mod network;
+pub mod payment;
 pub mod types;
 
 // Re-exports for easy access

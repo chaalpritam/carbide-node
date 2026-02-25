@@ -208,6 +208,8 @@ pub struct Provider {
     pub last_seen: DateTime<Utc>,
     /// Provider-specific metadata
     pub metadata: std::collections::HashMap<String, String>,
+    /// Ethereum wallet address for payments
+    pub wallet_address: Option<String>,
 }
 
 impl Provider {
@@ -232,6 +234,7 @@ impl Provider {
             reputation: ReputationScore::new(),
             last_seen: Utc::now(),
             metadata: std::collections::HashMap::new(),
+            wallet_address: None,
         }
     }
 
@@ -453,11 +456,25 @@ pub struct StorageContract {
     pub status: ContractStatus,
     /// Last proof of storage submission
     pub last_proof_at: Option<DateTime<Utc>>,
+    /// Client Ethereum address
+    pub client_address: Option<String>,
+    /// Provider Ethereum address
+    pub provider_address: Option<String>,
+    /// On-chain escrow identifier
+    pub escrow_id: Option<u64>,
+    /// Payment status tracking
+    pub payment_status: Option<String>,
+    /// Total USDC escrowed (as string for precision)
+    pub total_escrowed: Option<String>,
+    /// Total USDC released to provider (as string for precision)
+    pub total_released: Option<String>,
 }
 
 /// Status of a storage contract
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContractStatus {
+    /// Awaiting USDC deposit into escrow
+    PendingDeposit,
     /// Contract is active and provider should be storing file
     Active,
     /// Contract completed successfully
@@ -466,6 +483,8 @@ pub enum ContractStatus {
     Cancelled,
     /// Contract terminated due to provider failure
     Failed,
+    /// Contract is under dispute
+    Disputed,
 }
 
 // ============================================================================
