@@ -29,6 +29,7 @@
 
 pub mod client;
 pub mod discovery;
+pub mod payment;
 pub mod storage;
 pub mod wallet;
 
