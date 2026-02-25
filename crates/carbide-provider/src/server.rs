@@ -83,6 +83,8 @@ pub struct ProviderServer {
     tls_config: TlsConfig,
     /// SQLite database for persistent metadata (None = in-memory only)
     db: Option<Arc<StorageDb>>,
+    /// Challenges we have issued that are awaiting proof responses
+    active_challenges: Arc<tokio::sync::RwLock<HashMap<String, StorageChallengeData>>>,
 }
 
 /// Information about a stored file
@@ -222,6 +224,7 @@ impl ProviderServer {
             auth_config,
             tls_config,
             db,
+            active_challenges: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         })
     }
 
@@ -953,6 +956,13 @@ async fn proof_challenge(
                 generated_at: Utc::now(),
             };
 
+            // Store the challenge so proof_response can look it up later
+            server
+                .active_challenges
+                .write()
+                .await
+                .insert(challenge.challenge_id.clone(), challenge.clone());
+
             info!(
                 "✅ Generated proof for challenge {} ({} chunks)",
                 challenge.challenge_id,
@@ -991,17 +1001,112 @@ async fn proof_challenge(
 }
 
 /// Handle proof responses (verification)
+///
+/// Receives a StorageProof message, looks up the original challenge,
+/// and delegates to `carbide_crypto::proofs::ProofVerifier` for
+/// cryptographic verification.
 async fn proof_response(
-    State(_server): State<Arc<ProviderServer>>,
-    Json(_message): Json<NetworkMessage>,
+    State(server): State<Arc<ProviderServer>>,
+    Json(message): Json<NetworkMessage>,
 ) -> Json<VerificationResponse> {
     info!("Verifying proof-of-storage response");
 
-    // TODO: Implement actual proof verification
-    Json(VerificationResponse {
-        valid: true,
-        message: "Proof verified successfully".to_string(),
-    })
+    let proof_data = match message.message_type {
+        MessageType::StorageProof(ref p) => p.clone(),
+        _ => {
+            return Json(VerificationResponse {
+                valid: false,
+                message: "Expected StorageProof message".to_string(),
+            });
+        }
+    };
+
+    // Look up the original challenge
+    let challenges = server.active_challenges.read().await;
+    let challenge_data = match challenges.get(&proof_data.challenge_id) {
+        Some(c) => c.clone(),
+        None => {
+            return Json(VerificationResponse {
+                valid: false,
+                message: format!(
+                    "Unknown challenge id: {}",
+                    proof_data.challenge_id
+                ),
+            });
+        }
+    };
+    drop(challenges);
+
+    // Convert network types → carbide_crypto types
+    let crypto_challenge = carbide_crypto::proofs::StorageChallenge {
+        challenge_id: challenge_data.challenge_id.clone(),
+        file_hash: challenge_data.file_hash,
+        chunk_indices: challenge_data.chunk_indices.clone(),
+        nonce: challenge_data.nonce,
+        issued_at: challenge_data.issued_at,
+        expires_at: challenge_data.expires_at,
+        expected_response_hash: challenge_data.expected_response_hash,
+    };
+
+    let crypto_proof = carbide_crypto::proofs::StorageProof {
+        challenge_id: proof_data.challenge_id.clone(),
+        merkle_proofs: proof_data
+            .merkle_proofs
+            .iter()
+            .map(|p| carbide_crypto::proofs::ChunkProof {
+                chunk_index: p.chunk_index,
+                chunk_hash: p.chunk_hash,
+                merkle_path: p.merkle_path.clone(),
+                chunk_data: p.chunk_data.clone(),
+            })
+            .collect(),
+        response_hash: proof_data.response_hash,
+        signature: proof_data.signature.clone(),
+        generated_at: proof_data.generated_at,
+    };
+
+    // For the merkle root we currently use the file's content hash as a
+    // stand-in. A full implementation would build and persist a Merkle tree
+    // per file; for now the verifier checks proof structure and response hash.
+    let file_merkle_root = challenge_data.file_hash;
+
+    match carbide_crypto::proofs::ProofVerifier::verify_proof(
+        &crypto_challenge,
+        &crypto_proof,
+        file_merkle_root,
+    ) {
+        Ok(true) => {
+            // Remove the challenge so it cannot be replayed
+            server
+                .active_challenges
+                .write()
+                .await
+                .remove(&proof_data.challenge_id);
+
+            info!("✅ Proof verified for challenge {}", proof_data.challenge_id);
+            Json(VerificationResponse {
+                valid: true,
+                message: "Proof verified successfully".to_string(),
+            })
+        }
+        Ok(false) => {
+            warn!(
+                "❌ Proof verification failed for challenge {}",
+                proof_data.challenge_id
+            );
+            Json(VerificationResponse {
+                valid: false,
+                message: "Proof verification failed".to_string(),
+            })
+        }
+        Err(e) => {
+            warn!("Proof verification error: {}", e);
+            Json(VerificationResponse {
+                valid: false,
+                message: format!("Verification error: {e}"),
+            })
+        }
+    }
 }
 
 // ============================================================================
