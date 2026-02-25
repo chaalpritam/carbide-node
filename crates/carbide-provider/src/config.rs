@@ -292,6 +292,62 @@ impl ProviderConfig {
         }
     }
 
+    /// Validate configuration values before starting the server.
+    ///
+    /// Catches misconfigurations early (port 0, zero capacity, missing secrets)
+    /// instead of crashing at runtime with confusing errors.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Provider basics
+        if self.provider.name.trim().is_empty() {
+            anyhow::bail!("provider.name must not be empty");
+        }
+        if self.provider.max_storage_gb == 0 {
+            anyhow::bail!("provider.max_storage_gb must be greater than 0");
+        }
+        if self.provider.storage_path.as_os_str().is_empty() {
+            anyhow::bail!("provider.storage_path must not be empty");
+        }
+
+        // Pricing
+        if self.pricing.price_per_gb_month < 0.0 {
+            anyhow::bail!("pricing.price_per_gb_month must be >= 0");
+        }
+
+        // Network
+        if self.network.heartbeat_interval_secs < 10 {
+            anyhow::bail!(
+                "network.heartbeat_interval_secs must be >= 10 (got {})",
+                self.network.heartbeat_interval_secs
+            );
+        }
+
+        // Auth: if enabled, a JWT secret is required
+        if self.auth.enabled && self.auth.jwt_secret.is_none() {
+            anyhow::bail!(
+                "auth.enabled is true but auth.jwt_secret is not set. \
+                 Set CARBIDE_AUTH_JWT_SECRET or add jwt_secret to [auth] in config."
+            );
+        }
+
+        // TLS: if enabled without auto-generate, cert and key files must exist
+        if self.tls.enabled && !self.tls.auto_generate {
+            if !self.tls.cert_path.exists() {
+                anyhow::bail!(
+                    "tls.enabled is true and auto_generate is false, but cert_path does not exist: {}",
+                    self.tls.cert_path.display()
+                );
+            }
+            if !self.tls.key_path.exists() {
+                anyhow::bail!(
+                    "tls.enabled is true and auto_generate is false, but key_path does not exist: {}",
+                    self.tls.key_path.display()
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     /// Save configuration to TOML file
     pub async fn save_to_file(&self, path: &PathBuf) -> anyhow::Result<()> {
         let content = toml::to_string_pretty(self)?;

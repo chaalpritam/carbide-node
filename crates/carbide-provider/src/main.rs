@@ -273,6 +273,11 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         .await
         .with_context(|| format!("Failed to load config from: {}", config_path.display()))?;
 
+    // Validate configuration before proceeding
+    config
+        .validate()
+        .with_context(|| "Configuration validation failed")?;
+
     // Create storage directory if it doesn't exist
     tokio::fs::create_dir_all(&config.provider.storage_path)
         .await
