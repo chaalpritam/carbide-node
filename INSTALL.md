@@ -4,14 +4,33 @@ Complete setup guide for running a Carbide storage provider on your Mac mini wit
 
 ## 🚀 Quick Installation
 
-### Option 1: Automated Installer (Recommended)
+### Option 1: Homebrew (Recommended for Mac mini)
+
+The fastest path on macOS. Homebrew installs the binaries, writes a
+default config, and registers a launchd service that auto-starts the
+provider on boot.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/carbide-node.git
-cd carbide-node
+# One-liner (installs Homebrew if missing, then the formula)
+curl -fsSL https://raw.githubusercontent.com/chaalpritam/homebrew-carbide/master/install.sh | bash
+```
 
-# Run the installer
+Or manually:
+
+```bash
+brew tap chaalpritam/carbide https://github.com/chaalpritam/homebrew-carbide
+brew install --HEAD chaalpritam/carbide/carbide-node
+brew services start carbide-node
+```
+
+Edit `$(brew --prefix)/etc/carbide/provider.toml` (storage allocation,
+price, region), then `brew services restart carbide-node` to apply.
+
+### Option 2: Bundled Bash Installer
+
+```bash
+git clone https://github.com/chaalpritam/carbide-node.git
+cd carbide-node
 ./install.sh
 ```
 
@@ -23,7 +42,7 @@ The installer will:
 - ✅ Set up auto-start on boot
 - ✅ Create management commands
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 
 ```bash
 # 1. Install Rust (if not already installed)
