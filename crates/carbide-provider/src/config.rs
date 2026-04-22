@@ -118,6 +118,9 @@ pub struct WalletSection {
     /// USDC token contract address
     #[serde(default)]
     pub usdc_address: String,
+    /// CarbideRegistry contract address (empty = on-chain registration disabled)
+    #[serde(default)]
+    pub registry_address: String,
 }
 
 fn default_wallet_path() -> PathBuf {
@@ -141,6 +144,7 @@ impl Default for WalletSection {
             rpc_url: default_rpc_url(),
             escrow_address: String::new(),
             usdc_address: String::new(),
+            registry_address: String::new(),
         }
     }
 }
@@ -389,6 +393,9 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_USDC_ADDRESS") {
             self.wallet.usdc_address = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_REGISTRY_ADDRESS") {
+            self.wallet.registry_address = v;
         }
 
         // Proof scheduler overrides

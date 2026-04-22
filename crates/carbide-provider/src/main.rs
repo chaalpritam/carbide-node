@@ -548,6 +548,83 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         }
     }
 
+    // Self-publish to the on-chain provider registry when configured.
+    // Needs both the registry address and the wallet password (via
+    // CARBIDE_WALLET_PASSWORD) since registration is a signed write.
+    // Failures here are non-fatal: the provider still serves HTTP, but
+    // clients relying on the registry won't see it.
+    #[cfg(feature = "blockchain")]
+    {
+        let registry_addr = config.wallet.registry_address.clone();
+        if !registry_addr.is_empty() {
+            match std::env::var("CARBIDE_WALLET_PASSWORD") {
+                Ok(password) if !password.is_empty() => {
+                    let wallet_path = config.wallet.wallet_path.clone();
+                    let rpc_url = config.wallet.rpc_url.clone();
+                    let chain_id = config.wallet.chain_id;
+                    let endpoint = format!("http://{}", config.network.advertise_address);
+                    let region = config.provider.region.clone();
+                    let tier = config.provider.tier.clone();
+                    let capacity_gb = config.provider.max_storage_gb;
+                    let price = config.pricing.price_per_gb_month;
+
+                    tokio::spawn(async move {
+                        match carbide_provider::registry::parse_address(&registry_addr) {
+                            Ok(addr) => {
+                                match CarbideWallet::load_encrypted(&wallet_path, &password) {
+                                    Ok(wallet) => {
+                                        let key = wallet.private_key_bytes();
+                                        match carbide_provider::registry::RegistryWriter::new(
+                                            &rpc_url, chain_id, &key, addr,
+                                        ) {
+                                            Ok(writer) => {
+                                                match carbide_provider::registry::DesiredRegistration::from_config(
+                                                    endpoint, region, &tier, capacity_gb, price,
+                                                ) {
+                                                    Ok(desired) => {
+                                                        carbide_provider::registry::run_auto_register(
+                                                            std::sync::Arc::new(writer),
+                                                            desired,
+                                                        ).await;
+                                                    }
+                                                    Err(e) => warn!(
+                                                        "registry: cannot build desired registration ({e}); \
+                                                         auto-register skipped"
+                                                    ),
+                                                }
+                                            }
+                                            Err(e) => warn!(
+                                                "registry: failed to build writer ({e}); auto-register skipped"
+                                            ),
+                                        }
+                                    }
+                                    Err(e) => warn!(
+                                        "registry: cannot unlock wallet at {} ({e}); auto-register skipped",
+                                        wallet_path.display()
+                                    ),
+                                }
+                            }
+                            Err(e) => warn!("registry: {e}; auto-register skipped"),
+                        }
+                    });
+
+                    info!(
+                        registry = %config.wallet.registry_address,
+                        chain_id = config.wallet.chain_id,
+                        "On-chain registry auto-register scheduled"
+                    );
+                }
+                _ => {
+                    info!(
+                        registry = %registry_addr,
+                        "Registry address configured but CARBIDE_WALLET_PASSWORD not set; \
+                         skipping on-chain auto-register. Set the env var to self-publish."
+                    );
+                }
+            }
+        }
+    }
+
     info!(
         listen_url = %format!("http://localhost:{}", config.provider.port),
         status_endpoint = %format!("http://localhost:{}/api/v1/provider/status", config.provider.port),
