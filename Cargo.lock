@@ -600,6 +600,7 @@ dependencies = [
  "carbide-crypto",
  "chrono",
  "clap",
+ "ethers",
  "reqwest",
  "rusqlite",
  "rust_decimal",

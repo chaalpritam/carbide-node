@@ -40,6 +40,9 @@ tracing-subscriber = { workspace = true }
 # Database
 rusqlite = { workspace = true }
 
+# Optional blockchain integration
+ethers = { workspace = true, optional = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 tiny-keccak = { workspace = true }
@@ -50,3 +53,5 @@ tokio = { workspace = true }
 default = []
 # Mobile optimizations
 mobile = []
+# On-chain provider registry reader (CarbideRegistry.sol)
+blockchain = ["dep:ethers"]

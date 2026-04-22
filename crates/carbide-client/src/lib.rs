@@ -31,12 +31,16 @@ pub mod client;
 pub mod discovery;
 pub mod file_registry;
 pub mod payment;
+#[cfg(feature = "blockchain")]
+pub mod registry;
 pub mod storage;
 pub mod wallet;
 
 // Re-exports for convenience
 pub use client::{CarbideClient, ClientConfig, ProviderTestResult};
 pub use discovery::{DiscoveryClient, MarketplaceQuery, ProviderFilter};
+#[cfg(feature = "blockchain")]
+pub use registry::RegistryClient;
 pub use storage::{
     simple, ProgressCallback, RetrieveResult, StorageLocation, StorageManager, StoragePreferences,
     StorageProgress, StoreResult,
