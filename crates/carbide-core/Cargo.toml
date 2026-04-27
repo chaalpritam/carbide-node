@@ -37,9 +37,3 @@ tokio-test = "0.4"
 
 [features]
 default = []
-# Enable blockchain integration
-blockchain = ["dep:ethers"]
-
-[dependencies.ethers]
-workspace = true
-optional = true
