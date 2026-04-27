@@ -58,9 +58,6 @@ rcgen = "0.13"
 blake3 = "1.5"
 ring = "0.17"
 aes-gcm = "0.10"
-k256 = { version = "0.13", features = ["ecdsa"] }
-bip39 = "2.1"
-tiny-keccak = { version = "2.0", features = ["keccak"] }
 
 # Database and storage
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
@@ -83,9 +80,6 @@ criterion = "0.5"
 futures = "0.3"
 rand = "0.8"
 tokio-test = "0.4"
-
-# Optional features for blockchain integration  
-ethers = "2.0"
 
 [workspace.metadata]
 # Workspace-level metadata for tools
