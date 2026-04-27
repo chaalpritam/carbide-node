@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use carbide_client::file_registry::FileRegistry;
 use carbide_client::payment::{CreateContractRequest, PaymentClient};
-use carbide_client::wallet::ClientWallet;
 use carbide_client::CarbideClient;
 use carbide_core::network::*;
 use clap::Parser;
@@ -56,11 +55,6 @@ enum Command {
         #[arg(long)]
         providers: String,
     },
-    /// Wallet management commands
-    Wallet {
-        #[command(subcommand)]
-        action: WalletAction,
-    },
     /// Payment and contract commands
     Pay {
         #[command(subcommand)]
@@ -70,40 +64,6 @@ enum Command {
     Files {
         #[command(subcommand)]
         action: FilesAction,
-    },
-}
-
-#[derive(Parser)]
-enum WalletAction {
-    /// Create a new wallet
-    Create {
-        /// Directory to store the wallet file
-        #[arg(long, default_value = ".carbide")]
-        wallet_dir: PathBuf,
-        /// Encryption password
-        #[arg(long)]
-        password: String,
-    },
-    /// Show wallet address
-    Show {
-        /// Path to the wallet file
-        #[arg(long, default_value = ".carbide/wallet.json")]
-        wallet_path: PathBuf,
-        /// Decryption password
-        #[arg(long)]
-        password: String,
-    },
-    /// Import wallet from mnemonic
-    Import {
-        /// BIP-39 mnemonic phrase
-        #[arg(long)]
-        mnemonic: String,
-        /// Directory to store the wallet file
-        #[arg(long, default_value = ".carbide")]
-        wallet_dir: PathBuf,
-        /// Encryption password
-        #[arg(long)]
-        password: String,
     },
 }
 
@@ -314,43 +274,6 @@ async fn main() -> anyhow::Result<()> {
                 println!();
             }
         }
-
-        Command::Wallet { action } => match action {
-            WalletAction::Create {
-                wallet_dir,
-                password,
-            } => {
-                println!("Creating new wallet in {:?}...", wallet_dir);
-                let (wallet, mnemonic) = ClientWallet::create(&wallet_dir, &password)?;
-                println!("Wallet created!");
-                println!("  Address: {}", wallet.address_hex());
-                println!("  Saved to: {:?}", wallet.path());
-                println!();
-                println!("IMPORTANT - Save your recovery phrase:");
-                println!("  {}", mnemonic);
-                println!();
-                println!("This phrase is the ONLY way to recover your wallet.");
-            }
-            WalletAction::Show {
-                wallet_path,
-                password,
-            } => {
-                let wallet = ClientWallet::load(&wallet_path, &password)?;
-                println!("Wallet Address: {}", wallet.address_hex());
-            }
-            WalletAction::Import {
-                mnemonic,
-                wallet_dir,
-                password,
-            } => {
-                println!("Importing wallet from mnemonic...");
-                let wallet =
-                    ClientWallet::import_from_mnemonic(&wallet_dir, &mnemonic, &password)?;
-                println!("Wallet imported!");
-                println!("  Address: {}", wallet.address_hex());
-                println!("  Saved to: {:?}", wallet.path());
-            }
-        },
 
         Command::Files { action } => match action {
             FilesAction::List { status, db_path } => {
