@@ -31,7 +31,6 @@ pub mod content_hash;
 pub mod encryption;
 pub mod proofs;
 pub mod signing;
-pub mod wallet;
 
 // Re-exports for convenience
 pub use content_hash::*;

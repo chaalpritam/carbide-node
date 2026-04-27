@@ -21,9 +21,6 @@ chrono = { workspace = true }
 blake3 = { workspace = true }
 ring = { workspace = true }
 aes-gcm = { workspace = true }
-k256 = { workspace = true }
-bip39 = { workspace = true }
-tiny-keccak = { workspace = true }
 
 # Hex encoding
 hex = "0.4"
