@@ -486,9 +486,8 @@ class FileMetadata {
 
 **Options**:
 1. **Crypto payments** (preferred for decentralization)
-   - Lightning Network (instant, low fees)
-   - Ethereum/Polygon
-   - USDC stablecoin
+   - Solana SPL token transfers (low fees, sub-second finality)
+   - USDC on Solana
 2. **Traditional payments**
    - Stripe
    - Apple Pay

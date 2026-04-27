@@ -10,12 +10,12 @@ First official release of Carbide Network - a decentralized storage marketplace 
 
 ### Core Infrastructure
 
-- **carbide-core**: Shared data structures, content addressing, basic encryption, wallet address and payment types
+- **carbide-core**: Shared data structures, content addressing, basic encryption, and payment types
 - **carbide-provider**: Full-featured storage provider node with HTTP API server
 - **carbide-discovery**: Network discovery service with provider registry and marketplace
 - **carbide-client**: Client SDK for mobile/desktop integration with CLI tools
 - **carbide-reputation**: Multi-dimensional reputation and trust scoring system
-- **carbide-crypto**: Cryptographic primitives including Ed25519 signing and Ethereum wallet support
+- **carbide-crypto**: Cryptographic primitives including Ed25519 signing, AES-GCM encryption, and proof-of-storage helpers
 
 ### Storage Provider Features
 
@@ -32,7 +32,6 @@ First official release of Carbide Network - a decentralized storage marketplace 
 - Config validation with environment variable overrides
 - Discovery service registration with heartbeat
 - Reputation event emission
-- On-chain deposit verification and payment flow
 
 ### Client SDK Features
 
@@ -40,16 +39,6 @@ First official release of Carbide Network - a decentralized storage marketplace 
 - Multi-provider download with fallback via local file registry
 - Discovery-mediated upload flow with contract creation
 - Client-side encryption with AES-GCM
-- Escrow deposit flow and payment CLI commands
-- Wallet management with BIP-39 mnemonic support
-
-### Blockchain Integration
-
-- Ethereum wallet module (BIP-39, secp256k1 signing)
-- CarbideEscrow and MockUSDC Solidity contracts
-- Contract ABI bindings with configurable chain support
-- Payment verification wired into storage request flow
-- Arbitrum Sepolia testnet support
 
 ### Desktop GUI Application
 

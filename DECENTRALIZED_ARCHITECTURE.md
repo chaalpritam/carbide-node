@@ -207,44 +207,18 @@ struct PricingModel {
 }
 ```
 
-### 4. Smart Contract Layer ⏳ **PLANNED FOR PHASE 3**
+### 4. On-chain Program Layer ⏳ **PLANNED FOR PHASE 3**
 
-**Implementation Status**: Not yet implemented. Planned for Phase 3 (Economic Infrastructure).
+**Implementation Status**: Not yet implemented. Planned for Phase 3
+(Economic Infrastructure). The marketplace will move provider
+registration and escrowed payments on-chain so that storage deals are
+trust-minimised end-to-end.
 
-#### Storage Contracts (Future):
-```solidity
-contract CarbideStorageContract {
-    struct StorageDeal {
-        bytes32 fileHash;
-        address client;
-        address[] providers;
-        uint256 replicationFactor;
-        uint256 duration;
-        uint256 pricePerProvider;
-        uint256 collateralPerProvider;
-        DealStatus status;
-    }
-    
-    mapping(bytes32 => StorageDeal) public deals;
-    
-    function createStorageDeal(
-        bytes32 fileHash,
-        address[] memory providers,
-        uint256 duration,
-        uint256 replicationFactor
-    ) external payable {
-        require(providers.length >= replicationFactor, "Insufficient providers");
-        // ... implementation
-    }
-    
-    function submitProofOfStorage(
-        bytes32 fileHash,
-        bytes memory proof
-    ) external {
-        // Verify proof and release payments
-    }
-}
-```
+**Scope:**
+- Provider registry: tier, region, capacity, advertised price
+- Escrow accounts: client-funded, released per period after a valid
+  proof-of-storage attestation
+- Dispute and refund flow with verifier-signed attestations
 
 ### 5. Reputation System ✅ **IMPLEMENTED**
 
