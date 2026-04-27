@@ -40,6 +40,13 @@ tracing-subscriber = { workspace = true }
 # Database
 rusqlite = { workspace = true }
 
+# Solana on-chain reads
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+borsh = { workspace = true }
+sha2 = { workspace = true }
+bs58 = { workspace = true }
+
 [dev-dependencies]
 tempfile = "3.8"
 axum = { workspace = true }
