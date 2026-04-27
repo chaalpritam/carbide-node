@@ -86,9 +86,6 @@ pub struct ProviderServer {
     db: Option<Arc<StorageDb>>,
     /// Challenges we have issued that are awaiting proof responses
     active_challenges: Arc<tokio::sync::RwLock<HashMap<String, StorageChallengeData>>>,
-    /// On-chain payment service for deposit verification (blockchain feature only)
-    #[cfg(feature = "blockchain")]
-    payment_service: Option<Arc<crate::payment::PaymentService>>,
 }
 
 /// Information about a stored file
@@ -229,15 +226,7 @@ impl ProviderServer {
             tls_config,
             db,
             active_challenges: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            #[cfg(feature = "blockchain")]
-            payment_service: None,
         })
-    }
-
-    /// Set the on-chain payment service (blockchain feature only)
-    #[cfg(feature = "blockchain")]
-    pub fn set_payment_service(&mut self, service: Arc<crate::payment::PaymentService>) {
-        self.payment_service = Some(service);
     }
 
     /// Get the file path for storing a file
@@ -1304,47 +1293,6 @@ async fn verify_deposit(
     }
 
     let escrow_id = body.as_ref().map(|b| b.escrow_id);
-
-    // With blockchain feature: query on-chain escrow to verify deposit
-    #[cfg(feature = "blockchain")]
-    if let Some(ref payment_service) = server.payment_service {
-        let eid = escrow_id.ok_or_else(|| {
-            tracing::warn!("verify_deposit called without escrow_id while blockchain is enabled");
-            StatusCode::BAD_REQUEST
-        })?;
-
-        let funded = payment_service
-            .is_escrow_funded(eid)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to query escrow: {}", e);
-                StatusCode::BAD_GATEWAY
-            })?;
-
-        if !funded {
-            return Ok(Json(DepositVerificationResponse {
-                verified: false,
-                status: "PendingDeposit".to_string(),
-                message: "On-chain escrow is not funded or not active".to_string(),
-            }));
-        }
-
-        // Verify provider address matches
-        let details = payment_service
-            .get_escrow(eid)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to get escrow details: {}", e);
-                StatusCode::BAD_GATEWAY
-            })?;
-
-        info!(
-            escrow_id = eid,
-            total_amount = %details.total_amount,
-            client = %details.client,
-            "On-chain deposit verified"
-        );
-    }
 
     // Transition contract to Active
     contract.status = ContractStatus::Active;

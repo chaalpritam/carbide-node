@@ -28,9 +28,6 @@ pub struct ProviderConfig {
     /// TLS configuration
     #[serde(default)]
     pub tls: TlsSection,
-    /// Wallet and blockchain configuration
-    #[serde(default)]
-    pub wallet: WalletSection,
     /// Proof-of-storage scheduler configuration
     #[serde(default)]
     pub proof: ProofSection,
@@ -96,55 +93,6 @@ impl Default for AuthSection {
             enabled: false,
             jwt_secret: None,
             api_key_hashes: Vec::new(),
-        }
-    }
-}
-
-/// Wallet and blockchain configuration section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WalletSection {
-    /// Path to encrypted wallet file
-    #[serde(default = "default_wallet_path")]
-    pub wallet_path: PathBuf,
-    /// Chain ID (421614 = Arbitrum Sepolia, 42161 = Arbitrum One)
-    #[serde(default = "default_chain_id")]
-    pub chain_id: u64,
-    /// JSON-RPC URL for the target chain
-    #[serde(default = "default_rpc_url")]
-    pub rpc_url: String,
-    /// CarbideEscrow contract address (empty = blockchain features disabled)
-    #[serde(default)]
-    pub escrow_address: String,
-    /// USDC token contract address
-    #[serde(default)]
-    pub usdc_address: String,
-    /// CarbideRegistry contract address (empty = on-chain registration disabled)
-    #[serde(default)]
-    pub registry_address: String,
-}
-
-fn default_wallet_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".carbide/wallet/wallet.json")
-}
-
-fn default_chain_id() -> u64 {
-    421614 // Arbitrum Sepolia
-}
-
-fn default_rpc_url() -> String {
-    "https://sepolia-rollup.arbitrum.io/rpc".to_string()
-}
-
-impl Default for WalletSection {
-    fn default() -> Self {
-        Self {
-            wallet_path: default_wallet_path(),
-            chain_id: default_chain_id(),
-            rpc_url: default_rpc_url(),
-            escrow_address: String::new(),
-            usdc_address: String::new(),
-            registry_address: String::new(),
         }
     }
 }
@@ -270,7 +218,6 @@ impl Default for ProviderConfig {
             },
             auth: AuthSection::default(),
             tls: TlsSection::default(),
-            wallet: WalletSection::default(),
             proof: ProofSection::default(),
         }
     }
@@ -374,28 +321,6 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_TLS_AUTO_GENERATE") {
             self.tls.auto_generate = v == "true" || v == "1";
-        }
-
-        // Wallet overrides
-        if let Ok(v) = std::env::var("CARBIDE_WALLET_PATH") {
-            self.wallet.wallet_path = PathBuf::from(v);
-        }
-        if let Ok(v) = std::env::var("CARBIDE_CHAIN_ID") {
-            if let Ok(id) = v.parse::<u64>() {
-                self.wallet.chain_id = id;
-            }
-        }
-        if let Ok(v) = std::env::var("CARBIDE_RPC_URL") {
-            self.wallet.rpc_url = v;
-        }
-        if let Ok(v) = std::env::var("CARBIDE_ESCROW_ADDRESS") {
-            self.wallet.escrow_address = v;
-        }
-        if let Ok(v) = std::env::var("CARBIDE_USDC_ADDRESS") {
-            self.wallet.usdc_address = v;
-        }
-        if let Ok(v) = std::env::var("CARBIDE_REGISTRY_ADDRESS") {
-            self.wallet.registry_address = v;
         }
 
         // Proof scheduler overrides
