@@ -33,6 +33,7 @@ pub mod discovery_client;
 pub mod metrics;
 pub mod proof_scheduler;
 pub mod rate_limit;
+pub mod registry;
 pub mod reputation_emitter;
 pub mod server;
 pub mod storage_db;

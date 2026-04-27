@@ -58,11 +58,17 @@ dashmap = { workspace = true }
 # Auth
 jsonwebtoken = { workspace = true }
 hex = { workspace = true }
-sha2 = "0.10"
 
 # TLS
 axum-server = { workspace = true }
 rcgen = { workspace = true }
+
+# Solana on-chain registration
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+borsh = { workspace = true }
+sha2 = { workspace = true }
+bs58 = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

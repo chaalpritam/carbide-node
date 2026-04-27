@@ -28,6 +28,9 @@ pub struct ProviderConfig {
     /// TLS configuration
     #[serde(default)]
     pub tls: TlsSection,
+    /// Solana wallet and on-chain registration configuration
+    #[serde(default)]
+    pub wallet: SolanaWalletSection,
     /// Proof-of-storage scheduler configuration
     #[serde(default)]
     pub proof: ProofSection,
@@ -93,6 +96,55 @@ impl Default for AuthSection {
             enabled: false,
             jwt_secret: None,
             api_key_hashes: Vec::new(),
+        }
+    }
+}
+
+/// Solana wallet and on-chain registration configuration section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolanaWalletSection {
+    /// Path to the encrypted wallet file (Carbide format)
+    #[serde(default = "default_wallet_path")]
+    pub wallet_path: PathBuf,
+    /// Solana cluster label (e.g. `devnet`, `mainnet-beta`)
+    #[serde(default = "default_cluster")]
+    pub cluster: String,
+    /// JSON-RPC endpoint for the cluster
+    #[serde(default = "default_rpc_url")]
+    pub rpc_url: String,
+    /// carbide_registry program ID (empty disables on-chain auto-register)
+    #[serde(default)]
+    pub registry_program_id: String,
+    /// carbide_escrow program ID
+    #[serde(default)]
+    pub escrow_program_id: String,
+    /// SPL token mint used for payments (typically USDC)
+    #[serde(default)]
+    pub usdc_mint: String,
+}
+
+fn default_wallet_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join(".carbide/wallet/wallet.json")
+}
+
+fn default_cluster() -> String {
+    "devnet".to_string()
+}
+
+fn default_rpc_url() -> String {
+    "https://api.devnet.solana.com".to_string()
+}
+
+impl Default for SolanaWalletSection {
+    fn default() -> Self {
+        Self {
+            wallet_path: default_wallet_path(),
+            cluster: default_cluster(),
+            rpc_url: default_rpc_url(),
+            registry_program_id: String::new(),
+            escrow_program_id: String::new(),
+            usdc_mint: String::new(),
         }
     }
 }
@@ -218,6 +270,7 @@ impl Default for ProviderConfig {
             },
             auth: AuthSection::default(),
             tls: TlsSection::default(),
+            wallet: SolanaWalletSection::default(),
             proof: ProofSection::default(),
         }
     }
@@ -321,6 +374,26 @@ impl ProviderConfig {
         }
         if let Ok(v) = std::env::var("CARBIDE_TLS_AUTO_GENERATE") {
             self.tls.auto_generate = v == "true" || v == "1";
+        }
+
+        // Solana wallet overrides
+        if let Ok(v) = std::env::var("CARBIDE_WALLET_PATH") {
+            self.wallet.wallet_path = PathBuf::from(v);
+        }
+        if let Ok(v) = std::env::var("CARBIDE_SOLANA_CLUSTER") {
+            self.wallet.cluster = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_SOLANA_RPC_URL") {
+            self.wallet.rpc_url = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_REGISTRY_PROGRAM_ID") {
+            self.wallet.registry_program_id = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_ESCROW_PROGRAM_ID") {
+            self.wallet.escrow_program_id = v;
+        }
+        if let Ok(v) = std::env::var("CARBIDE_USDC_MINT") {
+            self.wallet.usdc_mint = v;
         }
 
         // Proof scheduler overrides

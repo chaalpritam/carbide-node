@@ -7,6 +7,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use carbide_core::{Provider, ProviderTier, Region};
+use carbide_crypto::wallet::CarbideWallet;
 use carbide_crypto::ProviderKeyPair;
 use carbide_provider::{ProviderConfig, ProviderServer, ServerConfig};
 use clap::Parser;
@@ -68,6 +69,25 @@ enum Command {
         /// Provider API endpoint
         #[arg(long, default_value = "http://localhost:8080")]
         endpoint: String,
+    },
+    /// Manage the Solana wallet used for on-chain registration and payments
+    Wallet {
+        #[command(subcommand)]
+        action: WalletAction,
+    },
+}
+
+#[derive(Parser)]
+enum WalletAction {
+    /// Create a new Solana wallet (Ed25519, BIP-44 path 501)
+    Create,
+    /// Show the wallet's Solana address
+    Show,
+    /// Import a wallet from a 12-word BIP-39 mnemonic
+    Import {
+        /// 12-word recovery phrase
+        #[arg(long)]
+        mnemonic: String,
     },
 }
 
@@ -224,6 +244,75 @@ async fn main() -> Result<()> {
             }
 
             println!("✅ Provider shut down gracefully");
+        }
+        Command::Wallet { action } => {
+            let wallet_path = std::env::var("CARBIDE_WALLET_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                    PathBuf::from(home).join(".carbide/wallet/wallet.json")
+                });
+
+            match action {
+                WalletAction::Create => {
+                    if wallet_path.exists() {
+                        println!("Wallet already exists at: {}", wallet_path.display());
+                        println!("Use `wallet show` to view the address, or delete the file to create a new one.");
+                        return Ok(());
+                    }
+
+                    let password = read_password("Enter password to encrypt wallet: ")?;
+                    if password.len() < 8 {
+                        anyhow::bail!("Password must be at least 8 characters");
+                    }
+
+                    let (wallet, mnemonic) = CarbideWallet::generate()
+                        .map_err(|e| anyhow::anyhow!("Failed to generate wallet: {}", e))?;
+                    wallet
+                        .save_encrypted(&wallet_path, &password)
+                        .map_err(|e| anyhow::anyhow!("Failed to save wallet: {}", e))?;
+
+                    println!("Wallet created!");
+                    println!("Address: {}", wallet.address());
+                    println!("Saved to: {}", wallet_path.display());
+                    println!();
+                    println!("IMPORTANT — write down your 12-word recovery phrase and store it safely.");
+                    println!("This is the ONLY way to recover the wallet if you lose the password.");
+                    println!();
+                    println!("Recovery phrase: {}", mnemonic);
+                }
+                WalletAction::Show => {
+                    if !wallet_path.exists() {
+                        println!("No wallet found at: {}", wallet_path.display());
+                        println!("Use `wallet create` to create a new wallet.");
+                        return Ok(());
+                    }
+                    let json = std::fs::read_to_string(&wallet_path)?;
+                    let wallet_file: serde_json::Value = serde_json::from_str(&json)?;
+                    let address = wallet_file["address"].as_str().unwrap_or("unknown");
+                    println!("Wallet address: {}", address);
+                    println!("Wallet file: {}", wallet_path.display());
+                }
+                WalletAction::Import { mnemonic } => {
+                    if wallet_path.exists() {
+                        println!("Wallet already exists at: {}", wallet_path.display());
+                        println!("Delete the existing wallet first if you want to import a new one.");
+                        return Ok(());
+                    }
+                    let password = read_password("Enter password to encrypt wallet: ")?;
+                    if password.len() < 8 {
+                        anyhow::bail!("Password must be at least 8 characters");
+                    }
+                    let wallet = CarbideWallet::from_mnemonic(&mnemonic)
+                        .map_err(|e| anyhow::anyhow!("Invalid mnemonic: {}", e))?;
+                    wallet
+                        .save_encrypted(&wallet_path, &password)
+                        .map_err(|e| anyhow::anyhow!("Failed to save wallet: {}", e))?;
+                    println!("Wallet imported!");
+                    println!("Address: {}", wallet.address());
+                    println!("Saved to: {}", wallet_path.display());
+                }
+            }
         }
         Command::Status { endpoint } => {
             // Check if this is actually a config file path (from our default config detection)
@@ -382,6 +471,83 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
         Some(&db_path),
     )?;
 
+    // Self-publish to the on-chain provider registry when configured.
+    // Requires both the program ID in config and CARBIDE_WALLET_PASSWORD
+    // in env (registration is a signed write). Failures are non-fatal:
+    // the HTTP API still serves; clients leaning on the registry just
+    // won't see this provider until the operator fixes the config.
+    let registry_program = config.wallet.registry_program_id.clone();
+    if !registry_program.is_empty() {
+        match std::env::var("CARBIDE_WALLET_PASSWORD") {
+            Ok(password) if !password.is_empty() => {
+                let wallet_path = config.wallet.wallet_path.clone();
+                let rpc_url = config.wallet.rpc_url.clone();
+                let endpoint = format!("http://{}", config.network.advertise_address);
+                let region = config.provider.region.clone();
+                let tier = config.provider.tier.clone();
+                let capacity_gb = config.provider.max_storage_gb;
+                let price = config.pricing.price_per_gb_month;
+
+                tokio::spawn(async move {
+                    let wallet = match CarbideWallet::load_encrypted(&wallet_path, &password) {
+                        Ok(w) => w,
+                        Err(e) => {
+                            warn!(
+                                "registry: cannot unlock wallet at {} ({e}); auto-register skipped",
+                                wallet_path.display()
+                            );
+                            return;
+                        }
+                    };
+                    let signer = match solana_sdk::signature::Keypair::try_from(
+                        &wallet.keypair_bytes()[..],
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            warn!("registry: failed to materialise signer keypair ({e}); auto-register skipped");
+                            return;
+                        }
+                    };
+                    let writer = match carbide_provider::registry::RegistryWriter::new(
+                        &rpc_url,
+                        &registry_program,
+                        signer,
+                    ) {
+                        Ok(w) => std::sync::Arc::new(w),
+                        Err(e) => {
+                            warn!("registry: failed to build writer ({e}); auto-register skipped");
+                            return;
+                        }
+                    };
+                    let desired = match carbide_provider::registry::DesiredRegistration::from_config(
+                        endpoint, region, &tier, capacity_gb, price,
+                    ) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            warn!(
+                                "registry: cannot build desired registration ({e}); auto-register skipped"
+                            );
+                            return;
+                        }
+                    };
+                    carbide_provider::registry::run_auto_register(writer, desired).await;
+                });
+
+                info!(
+                    program = %config.wallet.registry_program_id,
+                    cluster = %config.wallet.cluster,
+                    "On-chain registry auto-register scheduled"
+                );
+            }
+            _ => {
+                info!(
+                    program = %registry_program,
+                    "Registry program configured but CARBIDE_WALLET_PASSWORD not set; skipping on-chain auto-register."
+                );
+            }
+        }
+    }
+
     info!(
         listen_url = %format!("http://localhost:{}", config.provider.port),
         status_endpoint = %format!("http://localhost:{}/api/v1/provider/status", config.provider.port),
@@ -398,6 +564,16 @@ async fn run_with_config(config_path: &PathBuf) -> Result<()> {
 
     info!("Provider shut down gracefully");
     Ok(())
+}
+
+/// Read a password from stdin without echoing.
+fn read_password(prompt: &str) -> anyhow::Result<String> {
+    use std::io::Write;
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let mut password = String::new();
+    std::io::stdin().read_line(&mut password)?;
+    Ok(password.trim().to_string())
 }
 
 /// Parse provider tier from string
