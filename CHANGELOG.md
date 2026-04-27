@@ -2,6 +2,27 @@
 
 All notable changes to the Carbide Network project will be documented in this file.
 
+## [Unreleased]
+
+### Migration to Solana
+
+- carbide-crypto wallet rebuilt around Ed25519 with SLIP-0010 derivation
+  along Solana's standard BIP-44 path `m/44'/501'/0'/0'`. Wallets save in
+  the encrypted Carbide format or the standard `solana-keygen` JSON layout.
+- carbide-core gains a `SolanaConfig` (cluster, RPC URL, registry/escrow
+  program IDs, USDC mint) with devnet defaults and `CARBIDE_SOLANA_*` env
+  overrides.
+- carbide-client adds a `RegistryClient` that walks the on-chain
+  `carbide_registry` program with `getProgramAccounts` (filtered on the
+  Anchor 8-byte discriminator) and borsh-decodes each provider record.
+  The CLI regains `wallet {create,show,import}`.
+- carbide-provider boots an on-chain auto-register flow: when the program
+  ID is configured and `CARBIDE_WALLET_PASSWORD` is set, the node
+  publishes (or refreshes) its provider PDA on startup. Failures are
+  non-fatal — the HTTP API still serves.
+- All previous Ethereum integration (ethers, secp256k1, EIP-712,
+  Arbitrum) was removed in the prior cleanup pass.
+
 ## [1.0.0] - 2026-02-25
 
 ### Initial Production Release

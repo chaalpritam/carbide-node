@@ -219,11 +219,12 @@ struct ReputationScore {
 4. Dynamic pricing and market optimization
 5. Cross-platform provider support (Windows, Linux)
 
-### Phase 3: Economic Infrastructure
-1. Token/payment system integration
-2. Smart contract deployment for automated payments
-3. Dispute resolution mechanisms
-4. Global provider network expansion
+### Phase 3: Economic Infrastructure (in progress)
+1. Solana USDC payment integration via on-chain escrow
+2. Anchor programs deployed from `carbide-contracts` (registry + escrow)
+3. Verifier-attested release flow (Ed25519, off-chain attestation)
+4. Dispute resolution mechanisms
+5. Global provider network expansion
 
 ### Phase 4: Scale & Production
 1. Enterprise features and SLA support

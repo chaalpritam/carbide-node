@@ -119,13 +119,14 @@ Automated selection based on:
 - **60-80% cheaper** than centralized storage providers
 - **Proof-of-Storage** ensures data integrity through cryptographic verification
 - **Reputation system** rewards reliable providers with more customers
-- **Smart contracts** automate payments and handle disputes
+- **Solana programs** automate payments and handle disputes via on-chain escrow
 
 ## 🛠️ Technology Stack
 
 - **Language**: Rust (performance, safety, concurrency)
 - **Networking**: HTTP/2 + WebSocket (efficient mobile protocols)
 - **Cryptography**: Content-addressed storage + end-to-end encryption
+- **Chain**: Solana — Ed25519 wallet (BIP-44 path 501), USDC SPL escrow
 - **Economics**: Token-based payments + reputation scoring
 - **Consensus**: Proof-of-Replication + Proof-of-Spacetime
 
@@ -296,9 +297,9 @@ cd gui && npm run tauri:dev
 - ⏳ Cross-platform provider support (Windows, Linux)
 - ⏳ Distributed file chunking and deduplication
 
-### **Phase 3: Economic Infrastructure** (Planned)
-- ⏳ Token/payment system integration
-- ⏳ Smart contract deployment for automated payments
+### **Phase 3: Economic Infrastructure** (In progress)
+- 🔄 Solana payment integration (USDC SPL token, on-chain escrow)
+- 🔄 carbide_registry / carbide_escrow programs (Anchor)
 - ⏳ Automated dispute resolution
 - ⏳ Advanced proof systems verification
 - ⏳ Staking and incentive mechanisms
