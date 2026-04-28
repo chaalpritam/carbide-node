@@ -219,11 +219,11 @@ struct ReputationScore {
 4. Dynamic pricing and market optimization
 5. Cross-platform provider support (Windows, Linux)
 
-### Phase 3: Economic Infrastructure (in progress)
-1. Solana USDC payment integration via on-chain escrow
-2. Anchor programs deployed from `carbide-contracts` (registry + escrow)
-3. Verifier-attested release flow (Ed25519, off-chain attestation)
-4. Dispute resolution mechanisms
+### Phase 3: Economic Infrastructure
+1. ✅ Solana USDC payment integration via on-chain escrow — devnet end-to-end verified
+2. ✅ Anchor programs deployed from `carbide-contracts` (`carbide_registry`, `carbide_escrow`)
+3. ✅ Verifier-attested release flow — `release_payment` requires provider + whitelisted verifier co-signature
+4. Dispute resolution mechanisms (raise_dispute / resolve_dispute scaffolded; admin UX pending)
 5. Global provider network expansion
 
 ### Phase 4: Scale & Production
