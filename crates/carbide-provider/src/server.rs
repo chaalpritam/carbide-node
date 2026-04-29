@@ -392,10 +392,10 @@ impl ProviderServer {
         // Protected routes — all file/marketplace/proof operations
         let protected_routes = Router::new()
             .route(ApiEndpoints::FILE_STORE, post(store_file_request))
-            .route(ApiEndpoints::FILE_RETRIEVE, get(retrieve_file))
-            .route(ApiEndpoints::FILE_DELETE, delete(delete_file))
+            .route(&format!("{}/:id", ApiEndpoints::FILE_RETRIEVE), get(retrieve_file))
+            .route(&format!("{}/:id", ApiEndpoints::FILE_DELETE), delete(delete_file))
             .route(ApiEndpoints::FILE_UPLOAD, post(upload_file))
-            .route(ApiEndpoints::FILE_DOWNLOAD, get(download_file))
+            .route(&format!("{}/:id", ApiEndpoints::FILE_DOWNLOAD), get(download_file))
             .route(ApiEndpoints::STORAGE_QUOTE, post(storage_quote))
             .route(ApiEndpoints::PROOF_CHALLENGE, post(proof_challenge))
             .route(ApiEndpoints::PROOF_RESPONSE, post(proof_response))
