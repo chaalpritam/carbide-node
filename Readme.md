@@ -14,6 +14,104 @@ Carbide Network transforms data storage through a **working decentralized market
 - ✅ **Auto-Start** - macOS LaunchAgent for 24/7 operation
 - ✅ **Live Monitoring** - Real-time dashboard with earnings tracking
 
+## Running locally
+
+Build everything once, then start the pieces in separate terminals.
+
+```sh
+# 1. build all binaries (debug is fine for dev)
+cargo build --workspace
+
+# 2. terminal A — discovery service
+cargo run --bin carbide-discovery -- start --port 9090 --host 0.0.0.0
+
+# 3. terminal B — at least one provider
+cargo run --bin carbide-provider -- start \
+    --name "dev-provider" \
+    --port 8080 \
+    --capacity-gb 25 \
+    --price-per-gb-month 0.005
+
+# 4. terminal C — drive it with the client
+cargo run --bin carbide-client -- health   --endpoint http://127.0.0.1:8080
+cargo run --bin carbide-client -- upload   --provider http://127.0.0.1:8080 --file ~/some/file.pdf
+cargo run --bin carbide-client -- download --provider http://127.0.0.1:8080 \
+    --file-id <hex-from-upload> --out /tmp/roundtrip.pdf
+```
+
+`upload` and `download` go straight to one provider — no discovery
+service or Solana payment in the path — which is the cleanest demo
+loop. Use `quote` / `pay` if you want to exercise the full marketplace
+flow against the local discovery service.
+
+For a **two-laptop demo** (one provider, one client over LAN/Tailscale):
+
+1. On the provider laptop, install via Homebrew (see *Running in
+   production* below) and edit `$(brew --prefix)/etc/carbide/provider.toml`
+   so `[network] advertise_address = "<lan-ip>:8080"`. The
+   `upload_url` the provider hands clients is built from this value,
+   so leaving it as `127.0.0.1:8080` would make uploads from another
+   machine fail.
+2. Start the service: `brew services start carbide-node`.
+3. On the client laptop, run `carbide-client upload --provider http://<lan-ip>:8080 --file …`.
+
+### Tests, lint, formatting
+
+```sh
+cargo test --workspace
+cargo clippy --workspace -- -D warnings
+cargo fmt --all
+```
+
+## Running in production
+
+For a single Mac storage provider, the supported install path is the
+Homebrew tap at [`homebrew-carbide`](../homebrew-carbide):
+
+```sh
+brew tap chaalpritam/carbide https://github.com/chaalpritam/homebrew-carbide
+brew install --HEAD chaalpritam/carbide/carbide-node
+# Edit advertise_address, max_storage_gb, price_per_gb_month in:
+#   $(brew --prefix)/etc/carbide/provider.toml
+brew services start carbide-node
+```
+
+What this gives you:
+
+| Path | Purpose |
+| --- | --- |
+| `$(brew --prefix)/bin/carbide-{provider,discovery,client}` | CLI binaries |
+| `$(brew --prefix)/etc/carbide/provider.toml` | Provider config (edit before starting) |
+| `$(brew --prefix)/var/carbide/storage/` | Default storage root |
+| `$(brew --prefix)/var/log/carbide/{provider.out,provider.err}.log` | Service logs |
+
+The launchd service started by `brew services` keeps the provider
+alive across reboots and restarts on crash. To pick up config edits:
+
+```sh
+brew services restart carbide-node
+tail -f "$(brew --prefix)/var/log/carbide/provider.err.log"
+```
+
+For the **on-chain registration** path, fill in
+`[wallet] registry_address`, `escrow_address`, and `usdc_address` in
+`provider.toml` (devnet or mainnet addresses from
+[`carbide-contracts`](../carbide-contracts)) and export the wallet
+password to launchd:
+
+```sh
+launchctl setenv CARBIDE_WALLET_PASSWORD "<password>"
+brew services restart carbide-node
+```
+
+The provider will then publish itself to `carbide_registry` on its
+next heartbeat.
+
+For **discovery** and the **web frontend**, see the dedicated repos:
+
+- [`carbide-discovery-service`](../carbide-discovery-service) — Node/Fastify, ships a `Dockerfile` and works on Railway / Render / any container host.
+- [`carbide.network`](../carbide.network) — Next.js standalone build, also Dockerised.
+
 ## 🚀 Vision
 
 **Democratize data storage** by creating a peer-to-peer marketplace where:
