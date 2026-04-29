@@ -3,13 +3,16 @@
 //! Command-line interface for interacting with the Carbide Network
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use carbide_client::file_registry::FileRegistry;
 use carbide_client::payment::{CreateContractRequest, PaymentClient};
 use carbide_client::wallet::ClientWallet;
 use carbide_client::CarbideClient;
 use carbide_core::network::*;
+use carbide_core::{ContentHash, ProviderRequirements};
 use clap::Parser;
+use rust_decimal::Decimal;
 
 #[derive(Parser)]
 #[command(name = "carbide-client")]
@@ -70,6 +73,34 @@ enum Command {
     Files {
         #[command(subcommand)]
         action: FilesAction,
+    },
+    /// Upload a file directly to a single provider (no discovery, no payment).
+    /// Use this for a LAN/two-laptop demo where the provider endpoint is known.
+    Upload {
+        /// Provider endpoint, e.g. http://192.168.1.42:8080
+        #[arg(long)]
+        provider: String,
+        /// Path to the file to upload
+        #[arg(long)]
+        file: PathBuf,
+        /// Storage duration in months
+        #[arg(long, default_value = "1")]
+        duration_months: u32,
+        /// Maximum price the client is willing to pay per GB-month (decimal)
+        #[arg(long, default_value = "1.0")]
+        max_price: String,
+    },
+    /// Download a file directly from a single provider by content hash.
+    Download {
+        /// Provider endpoint, e.g. http://192.168.1.42:8080
+        #[arg(long)]
+        provider: String,
+        /// File ID (BLAKE3 content hash, 64-char hex) printed by `upload`
+        #[arg(long)]
+        file_id: String,
+        /// Output path
+        #[arg(long)]
+        out: PathBuf,
     },
 }
 
@@ -387,6 +418,88 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         },
+
+        Command::Upload {
+            provider,
+            file,
+            duration_months,
+            max_price,
+        } => {
+            let data = std::fs::read(&file)
+                .map_err(|e| anyhow::anyhow!("Failed to read {:?}: {}", file, e))?;
+            let file_size = data.len() as u64;
+            let file_id = ContentHash::from_data(&data);
+            let max_price_decimal = Decimal::from_str(&max_price)
+                .map_err(|e| anyhow::anyhow!("Invalid --max-price '{}': {}", max_price, e))?;
+
+            let provider = provider.trim_end_matches('/').to_string();
+
+            println!("Uploading {:?} ({} bytes) to {}", file, file_size, provider);
+            println!("  file_id: {}", file_id.to_hex());
+
+            let store_request = StoreFileRequest {
+                file_id,
+                file_size,
+                duration_months,
+                encryption_info: None,
+                requirements: ProviderRequirements::important(),
+                max_price: max_price_decimal,
+            };
+
+            let store_response = client.store_file(&provider, &store_request).await?;
+            if !store_response.accepted {
+                let reason = store_response
+                    .rejection_reason
+                    .unwrap_or_else(|| "no reason given".to_string());
+                anyhow::bail!("Provider rejected store request: {}", reason);
+            }
+            let upload_url = store_response
+                .upload_url
+                .ok_or_else(|| anyhow::anyhow!("Provider accepted but returned no upload_url"))?;
+            let upload_token = store_response
+                .upload_token
+                .ok_or_else(|| anyhow::anyhow!("Provider accepted but returned no upload_token"))?;
+
+            client
+                .upload_file(&upload_url, &file_id, &data, &upload_token)
+                .await?;
+
+            println!("✅ Upload complete.");
+            println!("   file_id: {}", file_id.to_hex());
+            println!(
+                "   download with: carbide-client download --provider {} --file-id {} --out <path>",
+                provider,
+                file_id.to_hex()
+            );
+        }
+
+        Command::Download {
+            provider,
+            file_id,
+            out,
+        } => {
+            let provider = provider.trim_end_matches('/').to_string();
+            let _ = ContentHash::from_hex(&file_id)
+                .map_err(|e| anyhow::anyhow!("Invalid --file-id '{}': {}", file_id, e))?;
+
+            let url = format!("{}{}/{}", provider, ApiEndpoints::FILE_DOWNLOAD, file_id);
+            println!("Downloading {} from {}", file_id, provider);
+
+            let response = reqwest::get(&url)
+                .await
+                .map_err(|e| anyhow::anyhow!("Download request failed: {}", e))?;
+            if !response.status().is_success() {
+                anyhow::bail!("Provider returned status {} for {}", response.status(), url);
+            }
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to read body: {}", e))?;
+
+            std::fs::write(&out, &bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to write {:?}: {}", out, e))?;
+            println!("✅ Wrote {} bytes to {:?}", bytes.len(), out);
+        }
 
         Command::Pay { action } => match action {
             PayAction::CreateContract {
